@@ -1,18 +1,41 @@
-import streamlit as st
+[23:06, 27/09/2026] Shoj: import streamlit as st
 import pandas as pd
 import random
 
 st.set_page_config(page_title="Slough Badminton Club", layout="wide")
 
-# Persistent User Database with updated credentials
-if "user_database" not in st.session_state:
-    st.session_state.user_database = {
-        "admin": {"password": "4dm1n776&", "role": "admin"},
-        "Musa": {"password": "4dmiN786&", "role": "admin"},
-        "Shoj": {"password": "playerpass123", "role": "player"}
-    }
+# HARDCODED USER ACCOUNTS (Static dictionary so passwords never get wiped on refresh)
+USER_DATABASE = {
+    "admin": {"password": "4dm1n776&", "role": "admin"},
+    "Musa": {"password": "4dmiN786&", "role": "admin"},
+    "Shoj": {"password": "playerpass123", "role": "player"}
+}
 
-# App State Setup
+# Session State Setup
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "username" not in st.session_state:
+    st.session_state.username = None
+if "role" not in st.session_state:
+    st.session_state.role = None
+
+if "active_players" not in st.session_state:
+    st.session_state.active_players = []
+if "session_scores" not in …
+[23:07, 27/09/2026] Shoj: import streamlit as st
+import pandas as pd
+import random
+
+st.set_page_config(page_title="Slough Badminton Club", layout="wide")
+
+# HARDCODED USER ACCOUNTS (Static dictionary so passwords never get wiped on refresh)
+USER_DATABASE = {
+    "admin": {"password": "4dm1n776&", "role": "admin"},
+    "Musa": {"password": "4dmiN786&", "role": "admin"},
+    "Shoj": {"password": "playerpass123", "role": "player"}
+}
+
+# Session State Setup
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
@@ -29,7 +52,6 @@ if "league_standings" not in st.session_state:
 if "play_counts" not in st.session_state:
     st.session_state.play_counts = {}
 
-# Active courts dictionary: {court_num: {"team1": [...], "team2": [...]}}
 if "courts_state" not in st.session_state:
     st.session_state.courts_state = {}
 
@@ -37,46 +59,21 @@ if "courts_state" not in st.session_state:
 if not st.session_state.logged_in:
     st.title("🏸 Slough Badminton Club")
     
-    login_tab, signup_tab = st.tabs(["🔒 Log In", "📝 Sign Up"])
-    
-    with login_tab:
-        with st.form("login_form"):
-            username_input = st.text_input("Username")
-            password_input = st.text_input("Password", type="password")
-            submit_button = st.form_submit_button("Log In")
-            
-            if submit_button:
-                db = st.session_state.user_database
-                if username_input in db and db[username_input]["password"] == password_input:
-                    st.session_state.logged_in = True
-                    st.session_state.username = username_input
-                    st.session_state.role = db[username_input]["role"]
-                    st.success(f"Welcome back, {username_input}!")
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password.")
-
-    with signup_tab:
-        with st.form("signup_form"):
-            new_username = st.text_input("Choose Username")
-            new_password = st.text_input("Choose Password", type="password")
-            confirm_password = st.text_input("Confirm Password", type="password")
-            signup_button = st.form_submit_button("Create Account")
-            
-            if signup_button:
-                db = st.session_state.user_database
-                if new_username in db:
-                    st.error("That username is already taken.")
-                elif new_password != confirm_password:
-                    st.error("Passwords do not match.")
-                elif not new_username or not new_password:
-                    st.error("Please fill in all fields.")
-                else:
-                    st.session_state.user_database[new_username] = {
-                        "password": new_password,
-                        "role": "player"
-                    }
-                    st.success("Account created successfully! Click Log In to sign in.")
+    with st.form("login_form"):
+        st.subheader("🔒 Log In")
+        username_input = st.text_input("Username").strip()
+        password_input = st.text_input("Password", type="password").strip()
+        submit_button = st.form_submit_button("Log In")
+        
+        if submit_button:
+            if username_input in USER_DATABASE and USER_DATABASE[username_input]["password"] == password_input:
+                st.session_state.logged_in = True
+                st.session_state.username = username_input
+                st.session_state.role = USER_DATABASE[username_input]["role"]
+                st.success(f"Welcome back, {username_input}!")
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
     st.stop()
 
 # --- MAIN APP (AFTER LOG IN) ---
