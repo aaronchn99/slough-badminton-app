@@ -4,7 +4,7 @@ import random
 
 st.set_page_config(page_title="Slough Badminton Club", layout="wide")
 
-# HARDCODED USER ACCOUNTS (Static dictionary so passwords never get wiped on refresh)
+# HARDCODED USER ACCOUNTS
 USER_DATABASE = {
     "admin": {"password": "4dm1n776&", "role": "admin"},
     "Musa": {"password": "4dmiN786&", "role": "admin"},
@@ -19,6 +19,10 @@ if "username" not in st.session_state:
 if "role" not in st.session_state:
     st.session_state.role = None
 
+# Track Session Numbers (1 to 12)
+if "current_session_num" not in st.session_state:
+    st.session_state.current_session_num = 1
+
 if "active_players" not in st.session_state:
     st.session_state.active_players = []
 if "session_scores" not in st.session_state:
@@ -31,7 +35,7 @@ if "play_counts" not in st.session_state:
 if "courts_state" not in st.session_state:
     st.session_state.courts_state = {}
 
-# --- LOGIN / SIGNUP SCREEN ---
+# --- LOGIN SCREEN ---
 if not st.session_state.logged_in:
     st.title("🏸 Slough Badminton Club")
     
@@ -61,11 +65,13 @@ if st.sidebar.button("Log Out"):
     st.session_state.courts_state = {}
     st.rerun()
 
+# Display Session Progress Counter
 st.title("🏸 Slough Badminton Club")
+st.subheader(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
 
 # Tabs
 if st.session_state.role == "admin":
-    tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League"])
+    tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management"])
 else:
     tabs = st.tabs(["📊 Today's Leaderboard", "🏆 12-Session League"])
 
@@ -119,7 +125,7 @@ if st.session_state.role == "admin":
             for c in range(1, num_courts + 1):
                 assign_next_match_to_court(c)
                 
-            st.success(f"Session started! Loaded {len(names)} players across {num_courts} courts.")
+            st.success(f"Session {st.session_state.current_session_num} started! Loaded {len(names)} players across {num_courts} courts.")
             st.rerun()
 
         st.write("---")
@@ -172,10 +178,42 @@ if st.session_state.role == "admin":
                         st.rerun()
                 st.write("---")
 
+    # SEASON & SESSION CONTROLS TAB
+    with tabs[3]:
+        st.subheader("⚙️ Session & Season Controls")
+        
+        col_a, col_b = st.columns(2)
+        
+        with col_a:
+            st.markdown("### End Current Session")
+            st.write("Locks in today's session scores, clears the active courts, and advances the session counter to the next week (e.g. Session 1/12 -> 2/12).")
+            if st.button("🏁 End Current Session", type="primary"):
+                if st.session_state.current_session_num < 12:
+                    st.session_state.current_session_num += 1
+                st.session_state.courts_state = {}
+                st.session_state.active_players = []
+                st.session_state.session_scores = {}
+                st.session_state.play_counts = {}
+                st.success(f"Session ended! Moved to Session {st.session_state.current_session_num} / 12.")
+                st.rerun()
+
+        with col_b:
+            st.markdown("### Reset Entire Season")
+            st.write("Resets the session counter back to *Session 1 / 12* and wipes all 12-session overall league standings.")
+            if st.button("🔴 End / Reset Entire Season"):
+                st.session_state.current_session_num = 1
+                st.session_state.league_standings = {}
+                st.session_state.session_scores = {}
+                st.session_state.courts_state = {}
+                st.session_state.active_players = []
+                st.session_state.play_counts = {}
+                st.success("Season reset back to Session 1 / 12!")
+                st.rerun()
+
 # --- TODAY'S LEADERBOARD ---
 today_tab = tabs[1] if st.session_state.role == "admin" else tabs[0]
 with today_tab:
-    st.subheader("Today's Session Standings")
+    st.subheader(f"Today's Session Standings (Session {st.session_state.current_session_num}/12)")
     if st.session_state.session_scores:
         df_today = pd.DataFrame([
             {"Player": k, "Points": v, "Games Played": st.session_state.play_counts.get(k, 0)}
@@ -184,12 +222,12 @@ with today_tab:
         df_today.index += 1
         st.dataframe(df_today, use_container_width=True)
     else:
-        st.info("No games recorded today yet.")
+        st.info("No games recorded for this session yet.")
 
 # --- 12-SESSION LEAGUE ---
 league_tab = tabs[2] if st.session_state.role == "admin" else tabs[1]
 with league_tab:
-    st.subheader("🏆 12-Session Overall League")
+    st.subheader(f"🏆 12-Session Overall League (Progress: {st.session_state.current_session_num}/12)")
     if st.session_state.league_standings:
         df_league = pd.DataFrame([
             {"Player": k, "Total Points": v}
