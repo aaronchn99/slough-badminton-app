@@ -4,7 +4,7 @@ import random
 
 st.set_page_config(page_title="Slough Badminton Club", layout="wide")
 
-# Persistent User Database in Session Memory
+# Persistent User Database
 if "user_database" not in st.session_state:
     st.session_state.user_database = {
         "admin": {"password": "adminpassword123", "role": "admin"},
@@ -27,6 +27,8 @@ if "league_standings" not in st.session_state:
     st.session_state.league_standings = {}
 if "play_counts" not in st.session_state:
     st.session_state.play_counts = {}
+if "current_round" not in st.session_state:
+    st.session_state.current_round = None
 
 # --- LOGIN / SIGNUP SCREEN ---
 if not st.session_state.logged_in:
@@ -71,7 +73,7 @@ if not st.session_state.logged_in:
                         "password": new_password,
                         "role": "player"
                     }
-                    st.success("Account created successfully! Click the Log In tab to sign in.")
+                    st.success("Account created successfully! Click Log In to sign in.")
     st.stop()
 
 # --- MAIN APP (AFTER LOG IN) ---
@@ -80,6 +82,7 @@ if st.sidebar.button("Log Out"):
     st.session_state.logged_in = False
     st.session_state.username = None
     st.session_state.role = None
+    st.session_state.current_round = None
     st.rerun()
 
 st.title("🏸 Slough Badminton Club")
@@ -95,7 +98,7 @@ if st.session_state.role == "admin":
     with tabs[0]:
         st.subheader("1. Session Setup")
         
-        default_names = "Shoj\nPlayer 2\nPlayer 3\nPlayer 4\nPlayer 5\nPlayer 6\nPlayer 7\nPlayer 8\nPlayer 9\nPlayer 10\nPlayer 11\nPlayer 12\nPlayer 13\nPlayer 14\nPlayer 15"
+        default_names = "Shoj\nAbdul Waheed\nAaron\nFaisal\nNaveed\nAbdulKhader\nRyan\nAbdullah sr\nYousuf\nAamer\nMohsin\nSimon\nJoe S\nHassan\nHabeeb"
         player_text = st.text_area("Enter Player Names Present Tonight (one per line):", value=default_names, height=150)
         
         num_courts = st.number_input("Number of Courts Available", min_value=1, max_value=6, value=3)
@@ -105,6 +108,7 @@ if st.session_state.role == "admin":
             st.session_state.active_players = names
             st.session_state.session_scores = {p: 0 for p in names}
             st.session_state.play_counts = {p: 0 for p in names}
+            st.session_state.current_round = None
             
             for p in names:
                 if p not in st.session_state.league_standings:
@@ -118,7 +122,6 @@ if st.session_state.role == "admin":
             if not st.session_state.active_players:
                 st.error("Please load players first above!")
             else:
-                # Sort players by least played first to keep turnouts balanced
                 available_players = sorted(
                     st.session_state.active_players, 
                     key=lambda p: (st.session_state.play_counts[p], random.random())
@@ -147,40 +150,59 @@ if st.session_state.role == "admin":
                     "resting": resting
                 }
 
-        if "current_round" in st.session_state:
+        # MATCH DISPLAY & INDIVIDUAL SCORE INPUTS
+        if st.session_state.current_round:
             curr = st.session_state.current_round
             if curr["resting"]:
                 st.warning(f"⏸️ *Resting this round ({len(curr['resting'])}):* {', '.join(curr['resting'])}")
             
             st.write("---")
-            with st.form("match_results"):
-                winners = {}
-                for m in curr["matches"]:
-                    st.markdown(f"#### Court {m['court']}")
-                    col1, col2, col3 = st.columns([3, 1, 3])
-                    with col1:
-                        st.write(f"*Team A:* {m['team1'][0]} & {m['team1'][1]}")
-                    with col2:
-                        result = st.radio(
-                            f"Winner Court {m['court']}", 
-                            options=["Team A", "Team B"], 
-                            key=f"court_{m['court']}", 
-                            label_visibility="collapsed"
-                        )
-                    with col3:
-                        st.write(f"*Team B:* {m['team2'][0]} & {m['team2'][1]}")
-                    winners[m['court']] = (result, m['team1'], m['team2'])
+            st.markdown("### Record Match Scores")
+            
+            scores_input = {}
+            for m in curr["matches"]:
+                court_num = m["court"]
+                st.markdown(f"#### Court {court_num}")
+                col1, col2, col3 = st.columns([3, 2, 3])
                 
-                if st.form_submit_button("Submit Round Scores"):
-                    for court_id, (winner, t1, t2) in winners.items():
-                        winning_team = t1 if winner == "Team A" else t2
-                        for p in winning_team:
+                with col1:
+                    st.write(f"*Team A:* {m['team1'][0]} & {m['team1'][1]}")
+                    score_a = st.number_input(f"Court {court_num} - Team A Score", min_value=0, max_value=30, value=0, key=f"score_a_{court_num}")
+                
+                with col2:
+                    st.markdown("<h3 style='text-align: center; margin-top: 25px;'>VS</h3>", unsafe_allow_html=True)
+                
+                with col3:
+                    st.write(f"*Team B:* {m['team2'][0]} & {m['team2'][1]}")
+                    score_b = st.number_input(f"Court {court_num} - Team B Score", min_value=0, max_value=30, value=0, key=f"score_b_{court_num}")
+                
+                scores_input[court_num] = {
+                    "team1": m['team1'],
+                    "team2": m['team2'],
+                    "score1": score_a,
+                    "score2": score_b
+                }
+                st.write("---")
+            
+            if st.button("💾 Submit Match Scores"):
+                for court_num, data in scores_input.items():
+                    s1 = data["score1"]
+                    s2 = data["score2"]
+                    
+                    if s1 > s2:
+                        # Team A Wins
+                        for p in data["team1"]:
                             st.session_state.session_scores[p] += 2
                             st.session_state.league_standings[p] += 2
-                                
-                    st.success("Scores updated!")
-                    del st.session_state.current_round
-                    st.rerun()
+                    elif s2 > s1:
+                        # Team B Wins
+                        for p in data["team2"]:
+                            st.session_state.session_scores[p] += 2
+                            st.session_state.league_standings[p] += 2
+                            
+                st.session_state.current_round = None
+                st.success("Scores saved! Tables updated.")
+                st.rerun()
 
 # --- TODAY'S LEADERBOARD ---
 today_tab = tabs[1] if st.session_state.role == "admin" else tabs[0]
