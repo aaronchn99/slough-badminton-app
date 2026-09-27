@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import random
+import urllib.parse
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
@@ -34,70 +35,43 @@ if "play_counts" not in st.session_state:
 if "courts_state" not in st.session_state:
     st.session_state.courts_state = {}
 
-# Custom SVG Badge Generator with Arched Top Text
-BADGE_HTML = """
-<div style="display: flex; justify-content: center; align-items: center; margin-bottom: 20px; width: 100%;">
-    <div style="
-        width: 260px; 
-        height: 260px; 
-        background-color: #1E4867; 
-        border-radius: 50%; 
-        border: 5px solid #F9F8F3;
-        box-shadow: 0 6px 14px rgba(0,0,0,0.3);
-        display: flex; 
-        flex-direction: column; 
-        align-items: center; 
-        justify-content: center; 
-        text-align: center; 
-        color: #F9F8F3; 
-        font-family: 'Arial Black', 'Helvetica Neue', sans-serif;
-        position: relative;
-        box-sizing: border-box;
-    ">
-        <!-- SVG for Arched BADMINTON MONDAYS text -->
-        <svg width="250" height="250" viewBox="0 0 250 250" style="position: absolute; top: 0; left: 0;">
-            <path id="textArch" d="M 30,125 A 95,95 0 1,1 220,125" fill="none" />
-            <text fill="#F9F8F3" font-size="15" font-weight="900" font-family="'Arial Black', sans-serif" letter-spacing="2">
-                <textPath href="#textArch" startOffset="50%" text-anchor="middle">
-                    BADMINTON MONDAYS
-                </textPath>
-            </text>
-        </svg>
+# Clean SVG Badge Vector Graphic
+RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260">
+    <circle cx="130" cy="130" r="120" fill="#1E4867" stroke="#F9F8F3" stroke-width="6"/>
+    <path id="archPath" d="M 35,130 A 95,95 0 1,1 225,130" fill="none" />
+    <text fill="#F9F8F3" font-size="15" font-weight="900" font-family="Arial, sans-serif" letter-spacing="2">
+        <textPath href="#archPath" startOffset="50%" text-anchor="middle">BADMINTON MONDAYS</textPath>
+    </text>
+    <text x="130" y="145" font-size="44" text-anchor="middle">🏸</text>
+    <text x="130" y="172" font-size="13" fill="#F9F8F3" text-anchor="middle" letter-spacing="2">⭐⭐⭐⭐⭐</text>
+    <text x="130" y="195" font-size="11" font-weight="bold" fill="#F9F8F3" text-anchor="middle" font-family="Arial, sans-serif">8PM - 10PM</text>
+    <text x="130" y="212" font-size="11" font-weight="bold" fill="#F9F8F3" text-anchor="middle" font-family="Arial, sans-serif">DITTON PARK, SLOUGH</text>
+</svg>"""
 
-        <!-- Center Racket Icon & 5 Stars -->
-        <div style="font-size: 44px; margin-top: 30px; line-height: 1; text-align: center;">
-            🏸
-        </div>
-        <div style="font-size: 13px; letter-spacing: 2px; margin: 4px 0; text-align: center;">
-            ⭐⭐⭐⭐⭐
-        </div>
-        <div style="font-size: 12px; font-weight: bold; line-height: 1.3; text-align: center; margin-top: 4px; text-transform: uppercase; width: 100%;">
-            8PM - 10PM<br>DITTON PARK, SLOUGH
-        </div>
-    </div>
-</div>
-"""
+SVG_URL = "data:image/svg+xml;utf8," + urllib.parse.quote(RAW_SVG)
 
 # --- LOGIN SCREEN ---
 if not st.session_state.logged_in:
-    st.markdown(BADGE_HTML, unsafe_allow_html=True)
-    st.title("Slough Badminton Club (Monday)")
-    
-    with st.form("login_form"):
-        st.subheader("🔒 Log In")
-        username_input = st.text_input("Username").strip()
-        password_input = st.text_input("Password", type="password").strip()
-        submit_button = st.form_submit_button("Log In")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image(SVG_URL, width=220)
+        st.title("Slough Badminton Club (Monday)")
         
-        if submit_button:
-            if username_input in USER_DATABASE and USER_DATABASE[username_input]["password"] == password_input:
-                st.session_state.logged_in = True
-                st.session_state.username = username_input
-                st.session_state.role = USER_DATABASE[username_input]["role"]
-                st.success(f"Welcome back, {username_input}!")
-                st.rerun()
-            else:
-                st.error("Invalid username or password.")
+        with st.form("login_form"):
+            st.subheader("🔒 Log In")
+            username_input = st.text_input("Username").strip()
+            password_input = st.text_input("Password", type="password").strip()
+            submit_button = st.form_submit_button("Log In")
+            
+            if submit_button:
+                if username_input in USER_DATABASE and USER_DATABASE[username_input]["password"] == password_input:
+                    st.session_state.logged_in = True
+                    st.session_state.username = username_input
+                    st.session_state.role = USER_DATABASE[username_input]["role"]
+                    st.success(f"Welcome back, {username_input}!")
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password.")
     st.stop()
 
 # --- MAIN APP (AFTER LOG IN) ---
@@ -109,10 +83,10 @@ if st.sidebar.button("Log Out"):
     st.session_state.courts_state = {}
     st.rerun()
 
-# Display Header
-col_logo, col_title = st.columns([1, 3])
+# Display Header Logo & Title
+col_logo, col_title = st.columns([1, 4])
 with col_logo:
-    st.markdown(BADGE_HTML, unsafe_allow_html=True)
+    st.image(SVG_URL, width=180)
 with col_title:
     st.title("Slough Badminton Club (Monday)")
     st.subheader(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
