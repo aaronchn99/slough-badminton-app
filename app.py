@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import random
 
-st.set_page_config(page_title="Slough Badminton Club", layout="wide")
+st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
 # HARDCODED USER ACCOUNTS
 USER_DATABASE = {
@@ -19,7 +19,6 @@ if "username" not in st.session_state:
 if "role" not in st.session_state:
     st.session_state.role = None
 
-# Track Session Numbers (1 to 12)
 if "current_session_num" not in st.session_state:
     st.session_state.current_session_num = 1
 
@@ -35,9 +34,46 @@ if "play_counts" not in st.session_state:
 if "courts_state" not in st.session_state:
     st.session_state.courts_state = {}
 
+# CSS HTML Badge Generator
+BADGE_HTML = """
+<div style="display: flex; justify-content: center; margin-bottom: 20px;">
+    <div style="
+        width: 240px; 
+        height: 240px; 
+        background-color: #1E4867; 
+        border-radius: 50%; 
+        border: 4px solid #F9F8F3;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        display: flex; 
+        flex-direction: column; 
+        align-items: center; 
+        justify-content: center; 
+        text-align: center; 
+        color: #F9F8F3; 
+        font-family: 'Arial Black', sans-serif;
+        padding: 15px;
+        box-sizing: border-box;
+    ">
+        <div style="font-size: 13px; letter-spacing: 1px; text-transform: uppercase; font-weight: bold;">
+            BADMINTON MONDAYS
+        </div>
+        <div style="font-size: 28px; margin: 4px 0;">
+            🏸
+        </div>
+        <div style="font-size: 10px; opacity: 0.9; margin-top: 2px;">
+            ⭐⭐⭐
+        </div>
+        <div style="font-size: 11px; margin-top: 8px; font-weight: bold; line-height: 1.2;">
+            8PM - 10PM<br>DITTON PARK, SLOUGH
+        </div>
+    </div>
+</div>
+"""
+
 # --- LOGIN SCREEN ---
 if not st.session_state.logged_in:
-    st.title("🏸 Slough Badminton Club")
+    st.markdown(BADGE_HTML, unsafe_allow_html=True)
+    st.title("Slough Badminton Club (Monday)")
     
     with st.form("login_form"):
         st.subheader("🔒 Log In")
@@ -65,9 +101,13 @@ if st.sidebar.button("Log Out"):
     st.session_state.courts_state = {}
     st.rerun()
 
-# Display Session Progress Counter
-st.title("🏸 Slough Badminton Club")
-st.subheader(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
+# Display Header
+col_logo, col_title = st.columns([1, 3])
+with col_logo:
+    st.markdown(BADGE_HTML, unsafe_allow_html=True)
+with col_title:
+    st.title("Slough Badminton Club (Monday)")
+    st.subheader(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
 
 # Tabs
 if st.session_state.role == "admin":
@@ -186,7 +226,7 @@ if st.session_state.role == "admin":
         
         with col_a:
             st.markdown("### End Current Session")
-            st.write("Locks in today's session scores, clears the active courts, and advances the session counter to the next week (e.g. Session 1/12 -> 2/12).")
+            st.write("Locks in today's session scores, clears the active courts, and advances the session counter to the next week.")
             if st.button("🏁 End Current Session", type="primary"):
                 if st.session_state.current_session_num < 12:
                     st.session_state.current_session_num += 1
