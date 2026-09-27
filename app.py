@@ -34,36 +34,44 @@ if "play_counts" not in st.session_state:
 if "courts_state" not in st.session_state:
     st.session_state.courts_state = {}
 
-# CSS HTML Badge Generator
+# Custom SVG Badge Generator with Arched Top Text
 BADGE_HTML = """
-<div style="display: flex; justify-content: center; margin-bottom: 20px;">
+<div style="display: flex; justify-content: center; align-items: center; margin-bottom: 20px; width: 100%;">
     <div style="
-        width: 240px; 
-        height: 240px; 
+        width: 260px; 
+        height: 260px; 
         background-color: #1E4867; 
         border-radius: 50%; 
-        border: 4px solid #F9F8F3;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        border: 5px solid #F9F8F3;
+        box-shadow: 0 6px 14px rgba(0,0,0,0.3);
         display: flex; 
         flex-direction: column; 
         align-items: center; 
         justify-content: center; 
         text-align: center; 
         color: #F9F8F3; 
-        font-family: 'Arial Black', sans-serif;
-        padding: 15px;
+        font-family: 'Arial Black', 'Helvetica Neue', sans-serif;
+        position: relative;
         box-sizing: border-box;
     ">
-        <div style="font-size: 13px; letter-spacing: 1px; text-transform: uppercase; font-weight: bold;">
-            BADMINTON MONDAYS
-        </div>
-        <div style="font-size: 28px; margin: 4px 0;">
+        <!-- SVG for Arched BADMINTON MONDAYS text -->
+        <svg width="250" height="250" viewBox="0 0 250 250" style="position: absolute; top: 0; left: 0;">
+            <path id="textArch" d="M 30,125 A 95,95 0 1,1 220,125" fill="none" />
+            <text fill="#F9F8F3" font-size="15" font-weight="900" font-family="'Arial Black', sans-serif" letter-spacing="2">
+                <textPath href="#textArch" startOffset="50%" text-anchor="middle">
+                    BADMINTON MONDAYS
+                </textPath>
+            </text>
+        </svg>
+
+        <!-- Center Racket Icon & 5 Stars -->
+        <div style="font-size: 44px; margin-top: 30px; line-height: 1; text-align: center;">
             🏸
         </div>
-        <div style="font-size: 10px; opacity: 0.9; margin-top: 2px;">
-            ⭐⭐⭐
+        <div style="font-size: 13px; letter-spacing: 2px; margin: 4px 0; text-align: center;">
+            ⭐⭐⭐⭐⭐
         </div>
-        <div style="font-size: 11px; margin-top: 8px; font-weight: bold; line-height: 1.2;">
+        <div style="font-size: 12px; font-weight: bold; line-height: 1.3; text-align: center; margin-top: 4px; text-transform: uppercase; width: 100%;">
             8PM - 10PM<br>DITTON PARK, SLOUGH
         </div>
     </div>
