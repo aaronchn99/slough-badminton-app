@@ -4,10 +4,11 @@ import random
 
 st.set_page_config(page_title="Slough Badminton Club", layout="wide")
 
-# Persistent User Database
+# Persistent User Database with updated credentials
 if "user_database" not in st.session_state:
     st.session_state.user_database = {
-        "admin": {"password": "adminpassword123", "role": "admin"},
+        "admin": {"password": "4dm1n776&", "role": "admin"},
+        "Musa": {"password": "4dmiN786&", "role": "admin"},
         "Shoj": {"password": "playerpass123", "role": "player"}
     }
 
@@ -104,7 +105,6 @@ def get_resting_players():
             currently_playing.update(match["team2"])
             
     resting = [p for p in st.session_state.active_players if p not in currently_playing]
-    # Sort by play counts (ascending) so those who played least get picked first
     return sorted(resting, key=lambda p: (st.session_state.play_counts[p], random.random()))
 
 # Helper function to assign next 4 available players to a court
@@ -143,7 +143,6 @@ if st.session_state.role == "admin":
                 if p not in st.session_state.league_standings:
                     st.session_state.league_standings[p] = 0
             
-            # Fill courts initially
             for c in range(1, num_courts + 1):
                 assign_next_match_to_court(c)
                 
@@ -190,7 +189,6 @@ if st.session_state.role == "admin":
                                     st.session_state.session_scores[p] += 2
                                     st.session_state.league_standings[p] += 2
                             
-                            # Immediately assign next match to this court
                             assign_next_match_to_court(court_num)
                             st.success(f"Court {court_num} score recorded & new match generated!")
                             st.rerun()
@@ -231,7 +229,7 @@ with league_tab:
         if len(df_league) >= 1:
             cols[0].metric("🥇 1st Place", df_league.iloc[0]["Player"], f"{df_league.iloc[0]['Total Points']} pts")
         if len(df_league) >= 2:
-            cols[1].metric("🥈 2nd Place", df_league.iloc[1]["Player"], f"{df_league.iloc[2]['Total Points']} pts")
+            cols[1].metric("🥈 2nd Place", df_league.iloc[1]["Player"], f"{df_league.iloc[1]['Total Points']} pts")
         if len(df_league) >= 3:
             cols[2].metric("🥉 3rd Place", df_league.iloc[2]["Player"], f"{df_league.iloc[2]['Total Points']} pts")
             
