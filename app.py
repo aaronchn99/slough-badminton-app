@@ -27,8 +27,10 @@ if "league_standings" not in st.session_state:
     st.session_state.league_standings = {}
 if "play_counts" not in st.session_state:
     st.session_state.play_counts = {}
-if "current_round" not in st.session_state:
-    st.session_state.current_round = None
+
+# Active courts dictionary: {court_num: {"team1": [...], "team2": [...]}}
+if "courts_state" not in st.session_state:
+    st.session_state.courts_state = {}
 
 # --- LOGIN / SIGNUP SCREEN ---
 if not st.session_state.logged_in:
@@ -82,16 +84,43 @@ if st.sidebar.button("Log Out"):
     st.session_state.logged_in = False
     st.session_state.username = None
     st.session_state.role = None
-    st.session_state.current_round = None
+    st.session_state.courts_state = {}
     st.rerun()
 
 st.title("🏸 Slough Badminton Club")
 
 # Tabs
 if st.session_state.role == "admin":
-    tabs = st.tabs(["🎾 Matchmaker & Scoring", "📊 Today's Leaderboard", "🏆 12-Session League"])
+    tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League"])
 else:
     tabs = st.tabs(["📊 Today's Leaderboard", "🏆 12-Session League"])
+
+# Helper function to get available resting players
+def get_resting_players():
+    currently_playing = set()
+    for c, match in st.session_state.courts_state.items():
+        if match:
+            currently_playing.update(match["team1"])
+            currently_playing.update(match["team2"])
+            
+    resting = [p for p in st.session_state.active_players if p not in currently_playing]
+    # Sort by play counts (ascending) so those who played least get picked first
+    return sorted(resting, key=lambda p: (st.session_state.play_counts[p], random.random()))
+
+# Helper function to assign next 4 available players to a court
+def assign_next_match_to_court(court_num):
+    resting = get_resting_players()
+    if len(resting) >= 4:
+        next_4 = resting[:4]
+        for p in next_4:
+            st.session_state.play_counts[p] += 1
+        random.shuffle(next_4)
+        st.session_state.courts_state[court_num] = {
+            "team1": [next_4[0], next_4[1]],
+            "team2": [next_4[2], next_4[3]]
+        }
+    else:
+        st.session_state.courts_state[court_num] = None
 
 # --- ADMIN PANEL ---
 if st.session_state.role == "admin":
@@ -103,106 +132,74 @@ if st.session_state.role == "admin":
         
         num_courts = st.number_input("Number of Courts Available", min_value=1, max_value=6, value=3)
         
-        if st.button("✅ Load / Reset Today's Players"):
+        if st.button("✅ Start Session / Populate Courts"):
             names = [p.strip() for p in player_text.split("\n") if p.strip()]
             st.session_state.active_players = names
             st.session_state.session_scores = {p: 0 for p in names}
             st.session_state.play_counts = {p: 0 for p in names}
-            st.session_state.current_round = None
+            st.session_state.courts_state = {}
             
             for p in names:
                 if p not in st.session_state.league_standings:
                     st.session_state.league_standings[p] = 0
-            st.success(f"Loaded {len(names)} players for tonight!")
+            
+            # Fill courts initially
+            for c in range(1, num_courts + 1):
+                assign_next_match_to_court(c)
+                
+            st.success(f"Session started! Loaded {len(names)} players across {num_courts} courts.")
+            st.rerun()
 
         st.write("---")
-        st.subheader("2. Generate Next Round")
         
-        if st.button("🔀 Shuffle & Generate Matches"):
-            if not st.session_state.active_players:
-                st.error("Please load players first above!")
-            else:
-                available_players = sorted(
-                    st.session_state.active_players, 
-                    key=lambda p: (st.session_state.play_counts[p], random.random())
-                )
-                
-                max_active_players = num_courts * 4
-                active = available_players[:max_active_players]
-                resting = available_players[max_active_players:]
-                
-                for p in active:
-                    st.session_state.play_counts[p] += 1
-                    
-                random.shuffle(active)
-                matches = []
-                for i in range(0, len(active), 4):
-                    group = active[i:i+4]
-                    if len(group) == 4:
-                        matches.append({
-                            "court": (i // 4) + 1,
-                            "team1": [group[0], group[1]],
-                            "team2": [group[2], group[3]]
-                        })
-                        
-                st.session_state.current_round = {
-                    "matches": matches,
-                    "resting": resting
-                }
-
-        # MATCH DISPLAY & INDIVIDUAL SCORE INPUTS
-        if st.session_state.current_round:
-            curr = st.session_state.current_round
-            if curr["resting"]:
-                st.warning(f"⏸️ *Resting this round ({len(curr['resting'])}):* {', '.join(curr['resting'])}")
-            
+        if st.session_state.active_players:
+            resting_players = get_resting_players()
+            st.info(f"⏸️ *Players Resting / Queueing ({len(resting_players)}):* {', '.join(resting_players) if resting_players else 'None'}")
             st.write("---")
-            st.markdown("### Record Match Scores")
             
-            scores_input = {}
-            for m in curr["matches"]:
-                court_num = m["court"]
-                st.markdown(f"#### Court {court_num}")
-                col1, col2, col3 = st.columns([3, 2, 3])
-                
-                with col1:
-                    st.write(f"*Team A:* {m['team1'][0]} & {m['team1'][1]}")
-                    score_a = st.number_input(f"Court {court_num} - Team A Score", min_value=0, max_value=30, value=0, key=f"score_a_{court_num}")
-                
-                with col2:
-                    st.markdown("<h3 style='text-align: center; margin-top: 25px;'>VS</h3>", unsafe_allow_html=True)
-                
-                with col3:
-                    st.write(f"*Team B:* {m['team2'][0]} & {m['team2'][1]}")
-                    score_b = st.number_input(f"Court {court_num} - Team B Score", min_value=0, max_value=30, value=0, key=f"score_b_{court_num}")
-                
-                scores_input[court_num] = {
-                    "team1": m['team1'],
-                    "team2": m['team2'],
-                    "score1": score_a,
-                    "score2": score_b
-                }
-                st.write("---")
+            st.subheader("2. Active Courts (Independent Scoring)")
             
-            if st.button("💾 Submit Match Scores"):
-                for court_num, data in scores_input.items():
-                    s1 = data["score1"]
-                    s2 = data["score2"]
+            for court_num in range(1, num_courts + 1):
+                match = st.session_state.courts_state.get(court_num)
+                st.markdown(f"### Court {court_num}")
+                
+                if match:
+                    col1, col2, col3, col4 = st.columns([3, 2, 3, 2])
                     
-                    if s1 > s2:
-                        # Team A Wins
-                        for p in data["team1"]:
-                            st.session_state.session_scores[p] += 2
-                            st.session_state.league_standings[p] += 2
-                    elif s2 > s1:
-                        # Team B Wins
-                        for p in data["team2"]:
-                            st.session_state.session_scores[p] += 2
-                            st.session_state.league_standings[p] += 2
+                    with col1:
+                        st.write(f"*Team A:* {match['team1'][0]} & {match['team1'][1]}")
+                        s1 = st.number_input(f"Team A Score", min_value=0, max_value=30, value=0, key=f"c{court_num}_s1")
+                    
+                    with col2:
+                        st.markdown("<h3 style='text-align: center; margin-top: 20px;'>VS</h3>", unsafe_allow_html=True)
+                    
+                    with col3:
+                        st.write(f"*Team B:* {match['team2'][0]} & {match['team2'][1]}")
+                        s2 = st.number_input(f"Team B Score", min_value=0, max_value=30, value=0, key=f"c{court_num}_s2")
+                        
+                    with col4:
+                        st.write("")
+                        st.write("")
+                        if st.button(f"💾 Finish Court {court_num}", key=f"btn_{court_num}"):
+                            if s1 > s2:
+                                for p in match["team1"]:
+                                    st.session_state.session_scores[p] += 2
+                                    st.session_state.league_standings[p] += 2
+                            elif s2 > s1:
+                                for p in match["team2"]:
+                                    st.session_state.session_scores[p] += 2
+                                    st.session_state.league_standings[p] += 2
                             
-                st.session_state.current_round = None
-                st.success("Scores saved! Tables updated.")
-                st.rerun()
+                            # Immediately assign next match to this court
+                            assign_next_match_to_court(court_num)
+                            st.success(f"Court {court_num} score recorded & new match generated!")
+                            st.rerun()
+                else:
+                    st.write("No active match on this court.")
+                    if st.button(f"⚡ Start Match on Court {court_num}", key=f"start_{court_num}"):
+                        assign_next_match_to_court(court_num)
+                        st.rerun()
+                st.write("---")
 
 # --- TODAY'S LEADERBOARD ---
 today_tab = tabs[1] if st.session_state.role == "admin" else tabs[0]
@@ -234,7 +231,7 @@ with league_tab:
         if len(df_league) >= 1:
             cols[0].metric("🥇 1st Place", df_league.iloc[0]["Player"], f"{df_league.iloc[0]['Total Points']} pts")
         if len(df_league) >= 2:
-            cols[1].metric("🥈 2nd Place", df_league.iloc[1]["Player"], f"{df_league.iloc[1]['Total Points']} pts")
+            cols[1].metric("🥈 2nd Place", df_league.iloc[1]["Player"], f"{df_league.iloc[2]['Total Points']} pts")
         if len(df_league) >= 3:
             cols[2].metric("🥉 3rd Place", df_league.iloc[2]["Player"], f"{df_league.iloc[2]['Total Points']} pts")
             
