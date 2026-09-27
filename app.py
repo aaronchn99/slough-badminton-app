@@ -1,28 +1,4 @@
-[23:06, 27/09/2026] Shoj: import streamlit as st
-import pandas as pd
-import random
-
-st.set_page_config(page_title="Slough Badminton Club", layout="wide")
-
-# HARDCODED USER ACCOUNTS (Static dictionary so passwords never get wiped on refresh)
-USER_DATABASE = {
-    "admin": {"password": "4dm1n776&", "role": "admin"},
-    "Musa": {"password": "4dmiN786&", "role": "admin"},
-    "Shoj": {"password": "playerpass123", "role": "player"}
-}
-
-# Session State Setup
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "username" not in st.session_state:
-    st.session_state.username = None
-if "role" not in st.session_state:
-    st.session_state.role = None
-
-if "active_players" not in st.session_state:
-    st.session_state.active_players = []
-if "session_scores" not in …
-[23:07, 27/09/2026] Shoj: import streamlit as st
+import streamlit as st
 import pandas as pd
 import random
 
