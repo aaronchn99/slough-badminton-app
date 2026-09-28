@@ -51,6 +51,7 @@ def load_global_session_state():
             st.session_state.league_standings = row.get("league_standings", {})
             st.session_state.play_counts = row.get("play_counts", {})
             st.session_state.recap_stats = row.get("recap_stats", {})
+            st.session_state.match_history = row.get("match_history", [])
     except Exception:
         pass
 
@@ -63,7 +64,8 @@ def save_global_session_state():
             "session_scores": st.session_state.get("session_scores", {}),
             "league_standings": st.session_state.get("league_standings", {}),
             "play_counts": st.session_state.get("play_counts", {}),
-            "recap_stats": st.session_state.get("recap_stats", {})
+            "recap_stats": st.session_state.get("recap_stats", {}),
+            "match_history": st.session_state.get("match_history", [])
         }).execute()
     except Exception:
         pass
@@ -195,6 +197,9 @@ if "last_court_time" not in st.session_state:
 if "recap_stats" not in st.session_state:
     st.session_state.recap_stats = {}
 
+if "match_history" not in st.session_state:
+    st.session_state.match_history = []
+
 load_global_session_state()
 
 RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260">
@@ -276,8 +281,8 @@ with col_title:
     st.title("Slough Badminton Club")
     st.caption(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
 
-# --- DYNAMIC TAB ROUTING ---
-tab_names = ["📊 Standings", "🌙 Recap", "🏆 League"]
+# --- DYNAMIC TAB ROUTING WITH 🔥 HUB ---
+tab_names = ["📊 Standings", "🔥 Hub", "🌙 Recap", "🏆 League"]
 if can_edit: tab_names.insert(0, "🎾 Courts")
 if can_manage_season: tab_names.append("⚙️ Season")
 if is_master_admin: tab_names.append("👥 Users")
@@ -285,6 +290,7 @@ if is_master_admin: tab_names.append("👥 Users")
 tabs = st.tabs(tab_names)
 tab_courts = tabs[tab_names.index("🎾 Courts")] if "🎾 Courts" in tab_names else None
 tab_standings = tabs[tab_names.index("📊 Standings")]
+tab_hub = tabs[tab_names.index("🔥 Hub")]
 tab_recap = tabs[tab_names.index("🌙 Recap")]
 tab_league = tabs[tab_names.index("🏆 League")]
 tab_season = tabs[tab_names.index("⚙️ Season")] if "⚙️ Season" in tab_names else None
@@ -327,7 +333,7 @@ def assign_next_match_to_court(court_num, courts_state):
         update_live_court(court_num, None, None)
         return False
 
-# --- CALLBACK: Process Court Finish & Recap Stats ---
+# --- CALLBACK: Process Court Finish & History Log ---
 def process_court_finish_callback(court_num, match, s1_key, s2_key):
     s1 = st.session_state.get(s1_key, 0)
     s2 = st.session_state.get(s2_key, 0)
@@ -343,11 +349,20 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
     t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
     t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
 
+    # --- SAVE MATCH TO HISTORY ---
+    match_record = {
+        "session": st.session_state.current_session_num,
+        "team1": match["team1"],
+        "team2": match["team2"],
+        "score1": s1,
+        "score2": s2
+    }
+    st.session_state.match_history.append(match_record)
+
     # --- UPDATE RECAP STATS ---
     rs = st.session_state.recap_stats
     rs["total_matches"] = rs.get("total_matches", 0) + 1
     
-    # Check for Longest Game
     lm = rs.get("longest_match", {"s1": 0, "s2": 0})
     if (s1 + s2) > (lm.get("s1", 0) + lm.get("s2", 0)):
         rs["longest_match"] = {"t1": match["team1"], "t2": match["team2"], "s1": s1, "s2": s2}
@@ -357,13 +372,11 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
     t2_avg = (r.get(t2_p1, 1200) + r.get(t2_p2, 1200)) / 2.0
     d1, d2 = calculate_rating_change(t1_avg, t2_avg, s1, s2)
 
-    # Process Team 1
     for p in match["team1"]:
         if s1 > s2:
             st.session_state.session_scores[p] = st.session_state.session_scores.get(p, 0) + 2
             st.session_state.league_standings[p] = st.session_state.league_standings.get(p, 0) + 2
             rs.setdefault("player_wins", {})[p] = rs.get("player_wins", {}).get(p, 0) + 1
-            
         rs.setdefault("total_points", {})[p] = rs.get("total_points", {}).get(p, 0) + s1 + s2
         if is_close: rs.setdefault("close_matches", {})[p] = rs.get("close_matches", {}).get(p, 0) + 1
         rs.setdefault("rating_gains", {})[p] = rs.get("rating_gains", {}).get(p, 0) + d1
@@ -371,13 +384,11 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
         st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d1)
         save_player_rating(p, st.session_state.player_ratings[p])
 
-    # Process Team 2
     for p in match["team2"]:
         if s2 > s1:
             st.session_state.session_scores[p] = st.session_state.session_scores.get(p, 0) + 2
             st.session_state.league_standings[p] = st.session_state.league_standings.get(p, 0) + 2
             rs.setdefault("player_wins", {})[p] = rs.get("player_wins", {}).get(p, 0) + 1
-            
         rs.setdefault("total_points", {})[p] = rs.get("total_points", {}).get(p, 0) + s1 + s2
         if is_close: rs.setdefault("close_matches", {})[p] = rs.get("close_matches", {}).get(p, 0) + 1
         rs.setdefault("rating_gains", {})[p] = rs.get("rating_gains", {}).get(p, 0) + d2
@@ -393,7 +404,7 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
     save_global_session_state()
     st.session_state[f"msg_{court_num}"] = ("success", f"Court {court_num} score saved successfully!")
 
-# --- MATCHMAKER & SCORING ---
+# --- COURTS ---
 if tab_courts:
     with tab_courts:
         if st.button("🔄 Refresh Live Courts", use_container_width=True):
@@ -412,7 +423,8 @@ if tab_courts:
                 st.session_state.session_scores = {p: 0 for p in names}
                 st.session_state.play_counts = {p: 0 for p in names}
                 st.session_state.last_court_time = {p: 0 for p in names}
-                st.session_state.recap_stats = {} # Reset recap stats for new session
+                st.session_state.recap_stats = {}
+                st.session_state.match_history = []
                 
                 db_ratings = load_player_ratings()
                 for p in names:
@@ -444,7 +456,6 @@ if tab_courts:
             
             for court_num in range(1, num_courts + 1):
                 match = live_courts_state.get(court_num)
-                
                 msg = st.session_state.pop(f"msg_{court_num}", None)
                 if msg:
                     if msg[0] == "error": st.error(msg[1])
@@ -452,7 +463,6 @@ if tab_courts:
 
                 with st.container(border=True):
                     st.markdown(f"#### 🏸 Court {court_num}")
-                    
                     if match:
                         t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
                         t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
@@ -493,7 +503,74 @@ with tab_standings:
     else:
         st.info("No games recorded for this session yet.")
 
-# --- RECAP TAB ---
+# --- 🔥 HUB (HEAD-TO-HEAD RIVALRIES & FORM GUIDE) ---
+with tab_hub:
+    st.header("🔥 Club Hub & Rivalries")
+    
+    all_players = sorted(list(st.session_state.player_ratings.keys()))
+    if len(all_players) >= 2:
+        st.subheader("⚔️ Head-to-Head Rivalry Lookup")
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            p1 = st.selectbox("Select Player 1", all_players, index=0)
+        with col_p2:
+            p2 = st.selectbox("Select Player 2", all_players, index=1 if len(all_players) > 1 else 0)
+            
+        if p1 == p2:
+            st.warning("Please select two different players to view their rivalry stats.")
+        else:
+            history = st.session_state.get("match_history", [])
+            p1_wins = 0
+            p2_wins = 0
+            meetings = 0
+            
+            for m in history:
+                t1 = m["team1"]
+                t2 = m["team2"]
+                s1 = m["score1"]
+                s2 = m["score2"]
+                
+                p1_in_t1 = p1 in t1
+                p1_in_t2 = p1 in t2
+                p2_in_t1 = p2 in t1
+                p2_in_t2 = p2 in t2
+                
+                # Check if they played against each other (on opposite teams)
+                if (p1_in_t1 and p2_in_t2) or (p1_in_t2 and p2_in_t1):
+                    meetings += 1
+                    if p1_in_t1 and s1 > s2: p1_wins += 1
+                    elif p1_in_t2 and s2 > s1: p1_wins += 1
+                    elif p2_in_t1 and s1 > s2: p2_wins += 1
+                    elif p2_in_t2 and s2 > s1: p2_wins += 1
+                    
+            c1, c2, c3 = st.columns(3)
+            c1.metric(f"{p1} Wins", p1_wins)
+            c2.metric("Total Battles", meetings)
+            c3.metric(f"{p2} Wins", p2_wins)
+            
+            if meetings == 0:
+                st.info(f"No recorded matches where {p1} and {p2} played directly against each other yet.")
+        
+        st.write("---")
+        st.subheader("⚡ Player Form Barometer")
+        selected_player = st.selectbox("Inspect Player Recent Form", all_players, key="form_player")
+        
+        player_matches = []
+        for m in history:
+            if selected_player in m["team1"] or selected_player in m["team2"]:
+                in_t1 = selected_player in m["team1"]
+                won = (in_t1 and m["score1"] > m["score2"]) or (not in_t1 and m["score2"] > m["score1"])
+                player_matches.append("🟢 Win" if won else "🔴 Loss")
+                
+        if player_matches:
+            recent_form = "  ".join(player_matches[-5:])
+            st.write(f"*Last {min(5, len(player_matches))} matches for {selected_player}:* {recent_form}")
+        else:
+            st.info(f"No match history recorded for {selected_player} yet.")
+    else:
+        st.info("Load player profiles to start tracking rivalries and form guides.")
+
+# --- RECAP ---
 with tab_recap:
     st.header("Night Recap")
     rs = st.session_state.get("recap_stats", {})
@@ -564,7 +641,7 @@ with tab_league:
     else:
         st.info("No overall standings recorded yet.")
 
-# --- SEASON CONTROLS TAB (STRICTLY ADMIN & MUSA) ---
+# --- SEASON CONTROLS TAB ---
 if tab_season:
     with tab_season:
         st.subheader("⚙️ Session & Season Controls")
@@ -580,7 +657,8 @@ if tab_season:
                 st.session_state.active_players = []
                 st.session_state.session_scores = {}
                 st.session_state.play_counts = {}
-                st.session_state.recap_stats = {} # Clear night recap
+                st.session_state.recap_stats = {}
+                st.session_state.match_history = []
                 save_global_session_state()
                 st.success(f"Session finished! Advanced to Session {st.session_state.current_session_num} / 12.")
                 st.rerun()
@@ -593,13 +671,14 @@ if tab_season:
                 st.session_state.session_scores = {}
                 st.session_state.active_players = []
                 st.session_state.play_counts = {}
-                st.session_state.recap_stats = {} # Clear night recap
+                st.session_state.recap_stats = {}
+                st.session_state.match_history = []
                 for c in range(1, 7): update_live_court(c, None, None)
                 save_global_session_state()
                 st.success("Season reset back to Session 1 / 12!")
                 st.rerun()
 
-# --- MASTER ADMIN ONLY: USER MANAGEMENT & AUDIT LOGS ---
+# --- USERS ---
 if tab_users:
     with tab_users:
         st.subheader("👥 User Backend & Activity Logs")
