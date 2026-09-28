@@ -6,6 +6,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client, Client
 import math
+import time
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
@@ -184,6 +185,10 @@ if "logged_in" not in st.session_state or not st.session_state.logged_in:
 
 if "player_ratings" not in st.session_state:
     st.session_state.player_ratings = load_player_ratings()
+    
+# NEW: Tracker for strict FIFO queue management
+if "last_court_time" not in st.session_state:
+    st.session_state.last_court_time = {}
 
 load_global_session_state()
 
@@ -277,8 +282,14 @@ def get_resting_players(courts_state):
         if match:
             currently_playing.update(match["team1"])
             currently_playing.update(match["team2"])
+    
     resting = [p for p in st.session_state.active_players if p not in currently_playing]
-    return sorted(resting, key=lambda p: (st.session_state.play_counts.get(p, 0), random.random()))
+    
+    # STRICT FIFO QUEUE: Sort by least games played first, then oldest court time 
+    return sorted(resting, key=lambda p: (
+        st.session_state.play_counts.get(p, 0), 
+        st.session_state.last_court_time.get(p, 0)
+    ))
 
 def assign_next_match_to_court(court_num, courts_state):
     resting = get_resting_players(courts_state)
@@ -291,7 +302,12 @@ def assign_next_match_to_court(court_num, courts_state):
             (([next_4[0], next_4[3]], [next_4[1], next_4[2]]), abs((r[next_4[0]] + r[next_4[3]]) - (r[next_4[1]] + r[next_4[2]]))),
         ]
         best_pairing = min(pairings, key=lambda x: x[1])[0]
-        for p in next_4: st.session_state.play_counts[p] = st.session_state.play_counts.get(p, 0) + 1
+        
+        current_time = time.time()
+        for p in next_4: 
+            st.session_state.play_counts[p] = st.session_state.play_counts.get(p, 0) + 1
+            st.session_state.last_court_time[p] = current_time # Update tracker to put them back of queue
+            
         update_live_court(court_num, best_pairing[0], best_pairing[1])
         save_global_session_state()
         return True
@@ -335,7 +351,6 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
         st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
         save_player_rating(p, st.session_state.player_ratings[p])
 
-    # Unbind widget state so it cleans up instantly
     st.session_state.pop(s1_key, None)
     st.session_state.pop(s2_key, None)
     
@@ -346,7 +361,6 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
 # --- MATCHMAKER & SCORING ---
 if can_edit:
     with tabs[0]:
-        # Manual Refresh Button replaces auto-refresh
         if st.button("🔄 Refresh Live Courts", use_container_width=True):
             st.rerun()
             
@@ -362,6 +376,8 @@ if can_edit:
                 st.session_state.active_players = names
                 st.session_state.session_scores = {p: 0 for p in names}
                 st.session_state.play_counts = {p: 0 for p in names}
+                st.session_state.last_court_time = {p: 0 for p in names} # Initialize queue
+                
                 db_ratings = load_player_ratings()
                 for p in names:
                     if p not in st.session_state.player_ratings:
@@ -393,7 +409,6 @@ if can_edit:
             for court_num in range(1, num_courts + 1):
                 match = live_courts_state.get(court_num)
                 
-                # Show any pending success/error messages triggered by callbacks
                 msg = st.session_state.pop(f"msg_{court_num}", None)
                 if msg:
                     if msg[0] == "error": st.error(msg[1])
@@ -419,7 +434,6 @@ if can_edit:
                         st.pills("Select Team B Score", options=score_pill_options, default=0, key=f"c{court_num}_s2_pills", label_visibility="collapsed")
                         
                         st.write("")
-                        # Button triggers callback directly before script rerun
                         st.button(f"💾 Save & Finish Court {court_num}", key=f"btn_{court_num}", type="primary", use_container_width=True, 
                                   on_click=process_court_finish_callback, 
                                   args=(court_num, match, f"c{court_num}_s1_pills", f"c{court_num}_s2_pills"))
