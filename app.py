@@ -479,8 +479,16 @@ with tab_standings:
 with tab_hub:
     st.header("🔥 Club Hub & Rivalries")
     
-    # Strictly pull names from the active players entered on the courts tab
-    active_pool = sorted(st.session_state.get("active_players", []))
+    # Extract all unique player names from match history and active players so past/present players are available
+    history = st.session_state.get("match_history", [])
+    historical_players = set()
+    for m in history:
+        historical_players.update(m["team1"])
+        historical_players.update(m["team2"])
+    
+    active_pool = sorted(list(set(st.session_state.get("active_players", [])).union(historical_players)))
+    if not active_pool:
+        active_pool = sorted(list(st.session_state.player_ratings.keys()))
     
     if len(active_pool) >= 2:
         st.subheader("⚔️ Head-to-Head Rivalry Lookup")
@@ -493,7 +501,6 @@ with tab_hub:
         if p1 == p2:
             st.warning("Please select two different players to view their rivalry stats.")
         else:
-            history = st.session_state.get("match_history", [])
             p1_wins = 0
             p2_wins = 0
             meetings = 0
@@ -541,12 +548,45 @@ with tab_hub:
         else:
             st.info(f"No match history recorded for {selected_player} yet.")
     else:
-        st.info("Start a session in the Courts tab to load player names into the Hub.")
+        st.info("No match history or players available yet.")
 
 # --- RECAP ---
 with tab_recap:
     st.header("Night Recap")
     rs = st.session_state.get("recap_stats", {})
+    
+    # Fallback calculation from match history if recap stats are empty
+    history = st.session_state.get("match_history", [])
+    if not rs and history:
+        player_wins = {}
+        total_points = {}
+        close_matches = {}
+        longest_match = {"s1": 0, "s2": 0}
+        
+        for m in history:
+            s1, s2 = m["score1"], m["score2"]
+            t1, t2 = m["team1"], m["team2"]
+            if (s1 + s2) > (longest_match.get("s1", 0) + longest_match.get("s2", 0)):
+                longest_match = {"t1": t1, "t2": t2, "s1": s1, "s2": s2}
+            is_close = abs(s1 - s2) <= 2
+            
+            for p in t1:
+                total_points[p] = total_points.get(p, 0) + s1 + s2
+                if is_close: close_matches[p] = close_matches.get(p, 0) + 1
+                if s1 > s2: player_wins[p] = player_wins.get(p, 0) + 1
+            for p in t2:
+                total_points[p] = total_points.get(p, 0) + s1 + s2
+                if is_close: close_matches[p] = close_matches.get(p, 0) + 1
+                if s2 > s1: player_wins[p] = player_wins.get(p, 0) + 1
+                
+        rs = {
+            "total_matches": len(history),
+            "player_wins": player_wins,
+            "longest_match": longest_match,
+            "close_matches": close_matches,
+            "total_points": total_points
+        }
+
     total_matches = rs.get("total_matches", 0)
     current_date = datetime.now(ZoneInfo("Europe/London")).strftime("%d %B %Y")
     st.caption(f"{current_date} · SBC · {total_matches} matches")
@@ -584,7 +624,7 @@ with tab_recap:
                 st.markdown(f"*{wh}*")
                 st.write(f"{pts[wh]} total points played")
     else:
-        st.info("No games finished tonight yet.")
+        st.info("No games finished recorded yet.")
 
 # --- LEAGUE ---
 with tab_league:
