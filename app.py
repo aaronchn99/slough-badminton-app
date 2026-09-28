@@ -49,8 +49,6 @@ def load_global_session_state():
             st.session_state.session_scores = row.get("session_scores", {})
             st.session_state.league_standings = row.get("league_standings", {})
             st.session_state.play_counts = row.get("play_counts", {})
-            st.session_state.recap_stats = row.get("recap_stats", {}) or {}
-            st.session_state.match_history = row.get("match_history", []) or []
     except Exception:
         pass
 
@@ -62,9 +60,26 @@ def save_global_session_state():
             "active_players": st.session_state.get("active_players", []),
             "session_scores": st.session_state.get("session_scores", {}),
             "league_standings": st.session_state.get("league_standings", {}),
-            "play_counts": st.session_state.get("play_counts", {}),
-            "recap_stats": st.session_state.get("recap_stats", {}),
-            "match_history": st.session_state.get("match_history", [])
+            "play_counts": st.session_state.get("play_counts", {})
+        }).execute()
+    except Exception:
+        pass
+
+def fetch_permanent_match_history():
+    try:
+        resp = supabase.table("match_history_log").select("*").order("id", desc=False).execute()
+        return resp.data if resp.data else []
+    except Exception:
+        return []
+
+def log_match_to_database(session_num, team1, team2, s1, s2):
+    try:
+        supabase.table("match_history_log").insert({
+            "session_num": session_num,
+            "team_a": team1,
+            "team_b": team2,
+            "score_a": s1,
+            "score_b": s2
         }).execute()
     except Exception:
         pass
@@ -168,12 +183,6 @@ if "player_ratings" not in st.session_state:
     
 if "last_court_time" not in st.session_state:
     st.session_state.last_court_time = {}
-
-if "recap_stats" not in st.session_state:
-    st.session_state.recap_stats = {}
-
-if "match_history" not in st.session_state:
-    st.session_state.match_history = []
 
 load_global_session_state()
 
@@ -303,7 +312,7 @@ def assign_next_match_to_court(court_num, courts_state):
         update_live_court(court_num, None, None)
         return False
 
-# --- CALLBACK: Process Court Finish & History Log ---
+# --- CALLBACK: Process Court Finish & Permanent Log ---
 def process_court_finish_callback(court_num, match, s1_key, s2_key):
     s1 = st.session_state.get(s1_key, 0)
     s2 = st.session_state.get(s2_key, 0)
@@ -319,24 +328,10 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
     t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
     t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
 
-    match_record = {
-        "session": st.session_state.current_session_num,
-        "team1": match["team1"],
-        "team2": match["team2"],
-        "score1": s1,
-        "score2": s2
-    }
-    st.session_state.match_history.append(match_record)
-
-    rs = st.session_state.recap_stats
-    rs["total_matches"] = rs.get("total_matches", 0) + 1
-    
-    lm = rs.get("longest_match", {"s1": 0, "s2": 0})
-    if (s1 + s2) > (lm.get("s1", 0) + lm.get("s2", 0)):
-        rs["longest_match"] = {"t1": match["team1"], "t2": match["team2"], "s1": s1, "s2": s2}
+    # Save permanently to database
+    log_match_to_database(st.session_state.current_session_num, match["team1"], match["team2"], s1, s2)
 
     is_close = abs(s1 - s2) <= 2
-    
     t1_avg = (r.get(t1_p1, 1200) + r.get(t1_p2, 1200)) / 2.0
     t2_avg = (r.get(t2_p1, 1200) + r.get(t2_p2, 1200)) / 2.0
     
@@ -353,10 +348,6 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
         if s1 > s2:
             st.session_state.session_scores[p] = st.session_state.session_scores.get(p, 0) + 2
             st.session_state.league_standings[p] = st.session_state.league_standings.get(p, 0) + 2
-            rs.setdefault("player_wins", {})[p] = rs.get("player_wins", {}).get(p, 0) + 1
-        rs.setdefault("total_points", {})[p] = rs.get("total_points", {}).get(p, 0) + s1 + s2
-        if is_close: rs.setdefault("close_matches", {})[p] = rs.get("close_matches", {}).get(p, 0) + 1
-        
         st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d1)
         save_player_rating(p, st.session_state.player_ratings[p])
 
@@ -364,14 +355,9 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
         if s2 > s1:
             st.session_state.session_scores[p] = st.session_state.session_scores.get(p, 0) + 2
             st.session_state.league_standings[p] = st.session_state.league_standings.get(p, 0) + 2
-            rs.setdefault("player_wins", {})[p] = rs.get("player_wins", {}).get(p, 0) + 1
-        rs.setdefault("total_points", {})[p] = rs.get("total_points", {}).get(p, 0) + s1 + s2
-        if is_close: rs.setdefault("close_matches", {})[p] = rs.get("close_matches", {}).get(p, 0) + 1
-        
         st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
         save_player_rating(p, st.session_state.player_ratings[p])
 
-    st.session_state.recap_stats = rs
     st.session_state.pop(s1_key, None)
     st.session_state.pop(s2_key, None)
     
@@ -398,8 +384,6 @@ if tab_courts:
                 st.session_state.session_scores = {p: 0 for p in names}
                 st.session_state.play_counts = {p: 0 for p in names}
                 st.session_state.last_court_time = {p: 0 for p in names}
-                st.session_state.recap_stats = {}
-                st.session_state.match_history = []
                 
                 db_ratings = load_player_ratings()
                 for p in names:
@@ -479,12 +463,12 @@ with tab_standings:
 with tab_hub:
     st.header("🔥 Club Hub & Rivalries")
     
-    # Gather all player names from active session, match history, and default names so the dropdown is never empty
-    history = st.session_state.get("match_history", [])
+    # Pull match history permanently from database
+    history = fetch_permanent_match_history()
     historical_players = set()
     for m in history:
-        historical_players.update(m.get("team1", []))
-        historical_players.update(m.get("team2", []))
+        historical_players.update(m.get("team_a", []))
+        historical_players.update(m.get("team_b", []))
     
     active_pool = sorted(list(set(st.session_state.get("active_players", [])).union(historical_players)))
     if not active_pool:
@@ -506,10 +490,10 @@ with tab_hub:
             meetings = 0
             
             for m in history:
-                t1 = m.get("team1", [])
-                t2 = m.get("team2", [])
-                s1 = m.get("score1", 0)
-                s2 = m.get("score2", 0)
+                t1 = m.get("team_a", [])
+                t2 = m.get("team_b", [])
+                s1 = m.get("score_a", 0)
+                s2 = m.get("score_b", 0)
                 
                 p1_in_t1 = p1 in t1
                 p1_in_t2 = p1 in t2
@@ -537,11 +521,11 @@ with tab_hub:
         
         player_matches = []
         for m in history:
-            t1 = m.get("team1", [])
-            t2 = m.get("team2", [])
+            t1 = m.get("team_a", [])
+            t2 = m.get("team_b", [])
             if selected_player in t1 or selected_player in t2:
                 in_t1 = selected_player in t1
-                won = (in_t1 and m.get("score1", 0) > m.get("score2", 0)) or (not in_t1 and m.get("score2", 0) > m.get("score1", 0))
+                won = (in_t1 and m.get("score_a", 0) > m.get("score_b", 0)) or (not in_t1 and m.get("score_b", 0) > m.get("score_a", 0))
                 player_matches.append("🟢 Win" if won else "🔴 Loss")
                 
         if player_matches:
@@ -555,76 +539,61 @@ with tab_hub:
 # --- RECAP ---
 with tab_recap:
     st.header("Night Recap")
-    rs = st.session_state.get("recap_stats", {})
-    history = st.session_state.get("match_history", [])
+    history = fetch_permanent_match_history()
     
-    # Robust fallback calculation if recap_stats is empty but match history exists
-    if not rs and history:
-        player_wins = {}
-        total_points = {}
-        close_matches = {}
-        longest_match = {"s1": 0, "s2": 0}
+    player_wins = {}
+    total_points = {}
+    close_matches = {}
+    longest_match = {"s1": 0, "s2": 0}
+    
+    for m in history:
+        s1, s2 = m.get("score_a", 0), m.get("score_b", 0)
+        t1, t2 = m.get("team_a", []), m.get("team_b", [])
+        if (s1 + s2) > (longest_match.get("s1", 0) + longest_match.get("s2", 0)):
+            longest_match = {"t1": t1, "t2": t2, "s1": s1, "s2": s2}
+        is_close = abs(s1 - s2) <= 2
         
-        for m in history:
-            s1, s2 = m.get("score1", 0), m.get("score2", 0)
-            t1, t2 = m.get("team1", []), m.get("team2", [])
-            if (s1 + s2) > (longest_match.get("s1", 0) + longest_match.get("s2", 0)):
-                longest_match = {"t1": t1, "t2": t2, "s1": s1, "s2": s2}
-            is_close = abs(s1 - s2) <= 2
+        for p in t1:
+            total_points[p] = total_points.get(p, 0) + s1 + s2
+            if is_close: close_matches[p] = close_matches.get(p, 0) + 1
+            if s1 > s2: player_wins[p] = player_wins.get(p, 0) + 1
+        for p in t2:
+            total_points[p] = total_points.get(p, 0) + s1 + s2
+            if is_close: close_matches[p] = close_matches.get(p, 0) + 1
+            if s2 > s1: player_wins[p] = player_wins.get(p, 0) + 1
             
-            for p in t1:
-                total_points[p] = total_points.get(p, 0) + s1 + s2
-                if is_close: close_matches[p] = close_matches.get(p, 0) + 1
-                if s1 > s2: player_wins[p] = player_wins.get(p, 0) + 1
-            for p in t2:
-                total_points[p] = total_points.get(p, 0) + s1 + s2
-                if is_close: close_matches[p] = close_matches.get(p, 0) + 1
-                if s2 > s1: player_wins[p] = player_wins.get(p, 0) + 1
-                
-        rs = {
-            "total_matches": len(history),
-            "player_wins": player_wins,
-            "longest_match": longest_match,
-            "close_matches": close_matches,
-            "total_points": total_points
-        }
-
-    total_matches = rs.get("total_matches", 0)
+    total_matches = len(history)
     current_date = datetime.now(ZoneInfo("Europe/London")).strftime("%d %B %Y")
     st.caption(f"{current_date} · SBC · {total_matches} matches")
     
     if total_matches > 0:
-        wins = rs.get("player_wins", {})
-        if wins:
-            champ = max(wins, key=wins.get)
+        if player_wins:
+            champ = max(player_wins, key=player_wins.get)
             with st.container(border=True):
                 st.caption("CHAMPION OF THE NIGHT")
                 st.markdown(f"*{champ}*")
-                st.write(f"{wins[champ]} wins")
+                st.write(f"{player_wins[champ]} wins")
                 
-        lm = rs.get("longest_match", {})
-        if lm.get("s1"):
+        if longest_match.get("s1"):
             with st.container(border=True):
                 st.caption("LONGEST GAME PLAYED")
-                st.markdown(f"*{lm['s1']}–{lm['s2']}*")
-                st.write(f"{' & '.join(lm.get('t1', []))} vs {' & '.join(lm.get('t2', []))}")
+                st.markdown(f"*{longest_match['s1']}–{longest_match['s2']}*")
+                st.write(f"{' & '.join(longest_match.get('t1', []))} vs {' & '.join(longest_match.get('t2', []))}")
                 
-        close = rs.get("close_matches", {})
-        if close:
-            max_close = max(close.values())
-            heroes = [k for k, v in close.items() if v == max_close]
+        if close_matches:
+            max_close = max(close_matches.values())
+            heroes = [k for k, v in close_matches.items() if v == max_close]
             with st.container(border=True):
                 st.caption("HEARTBREAK HEROES")
                 st.markdown(f"*{' · '.join(heroes)}*")
                 st.write(f"{max_close} close matches (decided by 2 points or fewer)")
                 
-        pts = rs.get("total_points", {})
-        if pts:
-            wh = max(pts, key=pts.get)
+        if total_points:
+            wh = max(total_points, key=total_points.get)
             with st.container(border=True):
                 st.caption("THE WORKHORSE")
                 st.markdown(f"*{wh}*")
-                st.write(f"{pts[wh]} total points played")
+                st.write(f"{total_points[wh]} total points played")
     else:
         st.info("No games finished or recorded in history yet.")
 
@@ -663,8 +632,6 @@ if tab_season:
                 st.session_state.active_players = []
                 st.session_state.session_scores = {}
                 st.session_state.play_counts = {}
-                st.session_state.recap_stats = {}
-                st.session_state.match_history = []
                 save_global_session_state()
                 st.success(f"Session finished! Advanced to Session {st.session_state.current_session_num} / 12.")
                 st.rerun()
@@ -677,8 +644,6 @@ if tab_season:
                 st.session_state.session_scores = {}
                 st.session_state.active_players = {}
                 st.session_state.play_counts = {}
-                st.session_state.recap_stats = {}
-                st.session_state.match_history = []
                 for c in range(1, 7): update_live_court(c, None, None)
                 save_global_session_state()
                 st.success("Season reset back to Session 1 / 12!")
