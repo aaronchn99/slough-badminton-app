@@ -5,7 +5,6 @@ import urllib.parse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client, Client
-import math
 import time
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
@@ -97,30 +96,6 @@ def update_live_court(court_num, team1=None, team2=None):
         }).execute()
     except Exception:
         pass
-
-# --- CLEAN LETTER-ONLY GRADE SCALE ---
-def get_letter_grade(rating):
-    r = round(rating)
-    if r >= 1500: return "A+"
-    elif r >= 1400: return "A"
-    elif r >= 1325: return "A-"
-    elif r >= 1250: return "B+"
-    elif r >= 1175: return "B"
-    elif r >= 1100: return "B-"
-    elif r >= 1025: return "C+"
-    elif r >= 950: return "C"
-    else: return "C-"
-
-def calculate_rating_change(team1_avg, team2_avg, score1, score2, k_factor=32):
-    margin = abs(score1 - score2)
-    margin_multiplier = math.log(margin + 1) if margin > 0 else 1.0
-    expected1 = 1.0 / (1.0 + 10 ** ((team2_avg - team1_avg) / 400.0))
-    expected2 = 1.0 - expected1
-    actual1 = 1.0 if score1 > score2 else (0.5 if score1 == score2 else 0.0)
-    actual2 = 1.0 - actual1
-    delta1 = round(k_factor * margin_multiplier * (actual1 - expected1))
-    delta2 = round(k_factor * margin_multiplier * (actual2 - expected2))
-    return delta1, delta2
 
 def load_player_ratings():
     ratings = {}
@@ -304,6 +279,7 @@ def get_resting_players(courts_state):
             currently_playing.update(match["team2"])
     
     resting = [p for p in st.session_state.active_players if p not in currently_playing]
+    # STRICT PURE FIFO: Sort purely by least games played, then oldest wait time
     return sorted(resting, key=lambda p: (
         st.session_state.play_counts.get(p, 0), 
         st.session_state.last_court_time.get(p, 0)
@@ -312,21 +288,19 @@ def get_resting_players(courts_state):
 def assign_next_match_to_court(court_num, courts_state):
     resting = get_resting_players(courts_state)
     if len(resting) >= 4:
+        # PURE ROTATION: Take the exact top 4 longest-waiting players without rating interference
         next_4 = resting[:4]
-        r = {p: st.session_state.player_ratings.get(p, 1200) for p in next_4}
-        pairings = [
-            (([next_4[0], next_4[1]], [next_4[2], next_4[3]]), abs((r[next_4[0]] + r[next_4[1]]) - (r[next_4[2]] + r[next_4[3]]))),
-            (([next_4[0], next_4[2]], [next_4[1], next_4[3]]), abs((r[next_4[0]] + r[next_4[2]]) - (r[next_4[1]] + r[next_4[3]]))),
-            (([next_4[0], next_4[3]], [next_4[1], next_4[2]]), abs((r[next_4[0]] + r[next_4[3]]) - (r[next_4[1]] + r[next_4[2]]))),
-        ]
-        best_pairing = min(pairings, key=lambda x: x[1])[0]
+        
+        # Split them evenly into pairs [p1, p2] vs [p3, p4]
+        team1 = [next_4[0], next_4[1]]
+        team2 = [next_4[2], next_4[3]]
         
         current_time = time.time()
         for p in next_4: 
             st.session_state.play_counts[p] = st.session_state.play_counts.get(p, 0) + 1
             st.session_state.last_court_time[p] = current_time 
             
-        update_live_court(court_num, best_pairing[0], best_pairing[1])
+        update_live_court(court_num, team1, team2)
         save_global_session_state()
         return True
     else:
@@ -349,7 +323,6 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
     t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
     t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
 
-    # --- SAVE MATCH TO HISTORY ---
     match_record = {
         "session": st.session_state.current_session_num,
         "team1": match["team1"],
@@ -359,7 +332,6 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
     }
     st.session_state.match_history.append(match_record)
 
-    # --- UPDATE RECAP STATS ---
     rs = st.session_state.recap_stats
     rs["total_matches"] = rs.get("total_matches", 0) + 1
     
@@ -368,9 +340,19 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
         rs["longest_match"] = {"t1": match["team1"], "t2": match["team2"], "s1": s1, "s2": s2}
 
     is_close = abs(s1 - s2) <= 2
+    
+    # Calculate rating changes quietly behind the scenes for profile stats
     t1_avg = (r.get(t1_p1, 1200) + r.get(t1_p2, 1200)) / 2.0
     t2_avg = (r.get(t2_p1, 1200) + r.get(t2_p2, 1200)) / 2.0
-    d1, d2 = calculate_rating_change(t1_avg, t2_avg, s1, s2)
+    
+    margin = abs(s1 - s2)
+    margin_multiplier = math.log(margin + 1) if margin > 0 else 1.0
+    expected1 = 1.0 / (1.0 + 10 ** ((t2_avg - t1_avg) / 400.0))
+    expected2 = 1.0 - expected1
+    actual1 = 1.0 if s1 > s2 else (0.5 if s1 == s2 else 0.0)
+    actual2 = 1.0 - actual1
+    d1 = round(32 * margin_multiplier * (actual1 - expected1))
+    d2 = round(32 * margin_multiplier * (actual2 - expected2))
 
     for p in match["team1"]:
         if s1 > s2:
@@ -444,7 +426,7 @@ if tab_courts:
 
         if st.session_state.active_players:
             resting_players = get_resting_players(live_courts_state)
-            formatted_resting = [f"{p} [{get_letter_grade(st.session_state.player_ratings.get(p, 1200))}]" for p in resting_players]
+            formatted_resting = [f"{p}" for p in resting_players]
             st.info(f"⏸️ *Queue ({len(resting_players)}):* {', '.join(formatted_resting) if formatted_resting else 'None'}")
             
             if st.button("💾 Save Everything to Database", type="secondary", use_container_width=True):
@@ -466,17 +448,14 @@ if tab_courts:
                     if match:
                         t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
                         t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
-                        r = st.session_state.player_ratings
-                        t1_g1, t1_g2 = get_letter_grade(r.get(t1_p1, 1200)), get_letter_grade(r.get(t1_p2, 1200))
-                        t2_g1, t2_g2 = get_letter_grade(r.get(t2_p1, 1200)), get_letter_grade(r.get(t2_p2, 1200))
                         
                         st.caption("🔵 *Team A*")
-                        st.write(f"• *{t1_p1}* [{t1_g1}] & *{t1_p2}* [{t1_g2}]")
+                        st.write(f"• *{t1_p1}* & *{t1_p2}*")
                         st.pills("Select Team A Score", options=score_pill_options, default=0, key=f"c{court_num}_s1_pills", label_visibility="collapsed")
                         
                         st.write("---")
                         st.caption("🔴 *Team B*")
-                        st.write(f"• *{t2_p1}* [{t2_g1}] & *{t2_p2}* [{t2_g2}]")
+                        st.write(f"• *{t2_p1}* & *{t2_p2}*")
                         st.pills("Select Team B Score", options=score_pill_options, default=0, key=f"c{court_num}_s2_pills", label_visibility="collapsed")
                         
                         st.write("")
@@ -495,7 +474,7 @@ with tab_standings:
     st.subheader(f"Today's Session Standings (Session {st.session_state.current_session_num}/12)")
     if st.session_state.session_scores:
         df_today = pd.DataFrame([
-            {"Player": k, "Grade": get_letter_grade(st.session_state.player_ratings.get(k, 1200)), "Session Points": v, "Games Played": st.session_state.play_counts.get(k, 0)}
+            {"Player": k, "Session Points": v, "Games Played": st.session_state.play_counts.get(k, 0)}
             for k, v in st.session_state.session_scores.items()
         ]).sort_values(by="Session Points", ascending=False).reset_index(drop=True)
         df_today.index += 1
@@ -507,14 +486,17 @@ with tab_standings:
 with tab_hub:
     st.header("🔥 Club Hub & Rivalries")
     
-    all_players = sorted(list(st.session_state.player_ratings.keys()))
-    if len(all_players) >= 2:
+    active_pool = st.session_state.get("active_players", [])
+    if not active_pool:
+        active_pool = sorted(list(st.session_state.player_ratings.keys()))
+    
+    if len(active_pool) >= 2:
         st.subheader("⚔️ Head-to-Head Rivalry Lookup")
         col_p1, col_p2 = st.columns(2)
         with col_p1:
-            p1 = st.selectbox("Select Player 1", all_players, index=0)
+            p1 = st.selectbox("Select Player 1", active_pool, index=0)
         with col_p2:
-            p2 = st.selectbox("Select Player 2", all_players, index=1 if len(all_players) > 1 else 0)
+            p2 = st.selectbox("Select Player 2", active_pool, index=1 if len(active_pool) > 1 else 0)
             
         if p1 == p2:
             st.warning("Please select two different players to view their rivalry stats.")
@@ -535,7 +517,6 @@ with tab_hub:
                 p2_in_t1 = p2 in t1
                 p2_in_t2 = p2 in t2
                 
-                # Check if they played against each other (on opposite teams)
                 if (p1_in_t1 and p2_in_t2) or (p1_in_t2 and p2_in_t1):
                     meetings += 1
                     if p1_in_t1 and s1 > s2: p1_wins += 1
@@ -553,7 +534,7 @@ with tab_hub:
         
         st.write("---")
         st.subheader("⚡ Player Form Barometer")
-        selected_player = st.selectbox("Inspect Player Recent Form", all_players, key="form_player")
+        selected_player = st.selectbox("Inspect Player Recent Form", active_pool, key="form_player")
         
         player_matches = []
         for m in history:
@@ -568,7 +549,7 @@ with tab_hub:
         else:
             st.info(f"No match history recorded for {selected_player} yet.")
     else:
-        st.info("Load player profiles to start tracking rivalries and form guides.")
+        st.info("Start a session in the Courts tab to load player names for the Hub.")
 
 # --- RECAP ---
 with tab_recap:
@@ -610,15 +591,6 @@ with tab_recap:
                 st.caption("THE WORKHORSE")
                 st.markdown(f"*{wh}*")
                 st.write(f"{pts[wh]} total points played")
-                
-        gains = rs.get("rating_gains", {})
-        if gains:
-            top_movers = sorted(gains.items(), key=lambda x: x[1], reverse=True)[:3]
-            movers_str = " · ".join([f"{k} +{v}" for k, v in top_movers if v > 0])
-            if movers_str:
-                with st.container(border=True):
-                    st.caption("TOP RATING MOVERS")
-                    st.markdown(f"*{movers_str}*")
     else:
         st.info("No games finished tonight yet.")
 
@@ -627,15 +599,15 @@ with tab_league:
     st.subheader(f"🏆 12-Session Overall League (Progress: {st.session_state.current_session_num}/12)")
     if st.session_state.league_standings:
         df_league = pd.DataFrame([
-            {"Player": k, "Grade": get_letter_grade(st.session_state.player_ratings.get(k, 1200)), "Total Points": v}
+            {"Player": k, "Total Points": v}
             for k, v in st.session_state.league_standings.items()
         ]).sort_values(by="Total Points", ascending=False).reset_index(drop=True)
         df_league.index += 1
         st.markdown("### 🥇 Top 3 Leaderboard")
         cols = st.columns(3)
-        if len(df_league) >= 1: cols[0].metric("🥇 1st Place", f"{df_league.iloc[0]['Player']} [{df_league.iloc[0]['Grade']}]", f"{df_league.iloc[0]['Total Points']} pts")
-        if len(df_league) >= 2: cols[1].metric("🥈 2nd Place", f"{df_league.iloc[1]['Player']} [{df_league.iloc[1]['Grade']}]", f"{df_league.iloc[1]['Total Points']} pts")
-        if len(df_league) >= 3: cols[2].metric("🥉 3rd Place", f"{df_league.iloc[2]['Player']} [{df_league.iloc[2]['Grade']}]", f"{df_league.iloc[2]['Total Points']} pts")
+        if len(df_league) >= 1: cols[0].metric("🥇 1st Place", f"{df_league.iloc[0]['Player']}", f"{df_league.iloc[0]['Total Points']} pts")
+        if len(df_league) >= 2: cols[1].metric("🥈 2nd Place", f"{df_league.iloc[1]['Player']}", f"{df_league.iloc[1]['Total Points']} pts")
+        if len(df_league) >= 3: cols[2].metric("🥉 3rd Place", f"{df_league.iloc[2]['Player']}", f"{df_league.iloc[2]['Total Points']} pts")
         st.write("---")
         st.dataframe(df_league)
     else:
@@ -685,16 +657,13 @@ if tab_users:
         try:
             users_resp = supabase.table("users").select("*").execute()
             logs_resp = supabase.table("login_logs").select("username, login_time").order("id", desc=True).limit(50).execute()
-            df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "rating", "created_at"])
-            if not df_users.empty:
-                df_users["Grade"] = df_users.get("rating", 1200).apply(lambda x: get_letter_grade(x) if pd.notnull(x) else "B")
-                df_users = df_users.drop(columns=["rating"], errors="ignore")
+            df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "created_at"])
             df_logs = pd.DataFrame(logs_resp.data) if logs_resp.data else pd.DataFrame(columns=["username", "login_time"])
             c1, c2 = st.columns(2)
             c1.metric("Registered Players", len(df_users))
             c2.metric("Total Login Events", len(df_logs))
             st.write("---")
-            st.markdown("### 📋 Registered Player Accounts & Grades")
+            st.markdown("### 📋 Registered Player Accounts")
             st.dataframe(df_users)
             st.write("---")
             st.markdown("### 🕒 Recent Login Audit Trail")
