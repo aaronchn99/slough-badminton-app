@@ -249,10 +249,10 @@ can_edit = session_live or (st.session_state.role == "admin")
 is_master_admin = (st.session_state.username == "admin")
 can_manage_season = (st.session_state.username in ["admin", "Musa"])
 
-st.sidebar.write(f"Logged in as: *{st.session_state.username}* ({st.session_state.role.capitalize()})")
-if st.session_state.role == "admin": st.sidebar.success("👑 *Admin User: Full Access Active 24/7*")
-elif session_live: st.sidebar.success("🟢 *Session Active (8PM-10PM): Edit Mode Unlocked for All*")
-else: st.sidebar.info("🔒 *Outside Session Hours: Read-Only Mode*")
+st.sidebar.write(f"Logged in as: **{st.session_state.username}** ({st.session_state.role.capitalize()})")
+if st.session_state.role == "admin": st.sidebar.success("👑 **Admin User: Full Access Active 24/7**")
+elif session_live: st.sidebar.success("🟢 **Session Active (8PM-10PM): Edit Mode Unlocked for All**")
+else: st.sidebar.info("🔒 **Outside Session Hours: Read-Only Mode**")
 if st.sidebar.button("Log Out", use_container_width=True):
     st.query_params.clear()
     st.session_state.logged_in = False
@@ -329,7 +329,6 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
     t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
     t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
 
-    # Save permanently to database log table
     log_match_to_database(st.session_state.current_session_num, match["team1"], match["team2"], s1, s2)
 
     t1_avg = (r.get(t1_p1, 1200) + r.get(t1_p2, 1200)) / 2.0
@@ -373,12 +372,13 @@ if tab_courts:
             
         live_courts_state = fetch_live_courts()
         
-        with st.expander("⚙️ Session Setup (Tap to expand/hide)", expanded=not bool(st.session_state.active_players)):
+        # --- INITIAL SETUP / BATCH LOAD ---
+        with st.expander("⚙️ Initial Session Setup (Load default roster)", expanded=not bool(st.session_state.active_players)):
             default_names = "Shoj\nAbdul Waheed\nAaron\nFaisal\nNaveed\nAbdulKhader\nRyan\nAbdullah sr\nYousuf\nAamer\nMohsin\nSimon\nJoe S\nHassan\nHabeeb"
-            player_text = st.text_area("Enter Player Names Present Tonight (one per line):", value=default_names, height=100)
+            player_text = st.text_area("Enter Default Player Names (one per line):", value=default_names, height=100)
             num_courts = st.number_input("Number of Courts Available", min_value=1, max_value=6, value=3)
             
-            if st.button("✅ Start Session / Populate Courts", use_container_width=True):
+            if st.button("✅ Start Session with Roster", use_container_width=True):
                 names = [p.strip() for p in player_text.split("\n") if p.strip()]
                 st.session_state.active_players = names
                 st.session_state.session_scores = {p: 0 for p in names}
@@ -398,13 +398,49 @@ if tab_courts:
                     assign_next_match_to_court(c, temp_courts)
                     temp_courts = fetch_live_courts()
                 save_global_session_state()
-                st.success(f"Session {st.session_state.current_session_num} started! Loaded {len(names)} players.")
+                st.success(f"Session {st.session_state.current_session_num} started with {len(names)} players.")
                 st.rerun()
 
         if st.session_state.active_players:
+            # --- INTUITIVE MID-GAME PLAYER ATTENDANCE MANAGER ---
+            with st.expander("👥 Manage Attendance (Add Late Arrivals / Remove Early Leavers)", expanded=False):
+                col_add1, col_add2 = st.columns([3, 1])
+                with col_add1:
+                    new_player_name = st.text_input("Add New / Late Player", placeholder="Enter player name...", label_visibility="collapsed").strip()
+                with col_add2:
+                    if st.button("➕ Add Player", use_container_width=True):
+                        if new_player_name:
+                            if new_player_name not in st.session_state.active_players:
+                                st.session_state.active_players.append(new_player_name)
+                                st.session_state.session_scores.setdefault(new_player_name, 0)
+                                st.session_state.play_counts.setdefault(new_player_name, 0)
+                                st.session_state.last_court_time.setdefault(new_player_name, 0)
+                                st.session_state.player_ratings.setdefault(new_player_name, 1200)
+                                st.session_state.league_standings.setdefault(new_player_name, 0)
+                                save_global_session_state()
+                                st.success(f"Added {new_player_name} to tonight's session!")
+                                st.rerun()
+                            else:
+                                st.warning("Player is already in the active list.")
+                        else:
+                            st.error("Please enter a valid name.")
+
+                st.write("---")
+                st.caption("Active Players Tonight (Tap ❌ to remove early leavers):")
+                
+                # Display players in clean rows with delete buttons
+                for p in list(st.session_state.active_players):
+                    col_pname, col_pdel = st.columns([4, 1])
+                    col_pname.write(f"• **{p}** ({st.session_state.play_counts.get(p, 0)} games played)")
+                    if col_pdel.button("❌ Remove", key=f"remove_{p}"):
+                        st.session_state.active_players.remove(p)
+                        save_global_session_state()
+                        st.success(f"Removed {p} from active rotation.")
+                        st.rerun()
+
             resting_players = get_resting_players(live_courts_state)
             formatted_resting = [f"{p}" for p in resting_players]
-            st.info(f"⏸️ *Queue ({len(resting_players)}):* {', '.join(formatted_resting) if formatted_resting else 'None'}")
+            st.info(f"⏸️ **Queue ({len(resting_players)}):** {', '.join(formatted_resting) if formatted_resting else 'None'}")
             
             if st.button("💾 Save Everything to Database", type="secondary", use_container_width=True):
                 save_global_session_state()
@@ -426,13 +462,13 @@ if tab_courts:
                         t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
                         t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
                         
-                        st.caption("🔵 *Team A*")
-                        st.write(f"• *{t1_p1}* & *{t1_p2}*")
+                        st.caption("🔵 **Team A**")
+                        st.write(f"• **{t1_p1}** & **{t1_p2}**")
                         st.pills("Select Team A Score", options=score_pill_options, default=0, key=f"c{court_num}_s1_pills", label_visibility="collapsed")
                         
                         st.write("---")
-                        st.caption("🔴 *Team B*")
-                        st.write(f"• *{t2_p1}* & *{t2_p2}*")
+                        st.caption("🔴 **Team B**")
+                        st.write(f"• **{t2_p1}** & **{t2_p2}**")
                         st.pills("Select Team B Score", options=score_pill_options, default=0, key=f"c{court_num}_s2_pills", label_visibility="collapsed")
                         
                         st.write("")
@@ -463,7 +499,6 @@ with tab_standings:
 with tab_hub:
     st.header("🔥 Club Hub & Rivalries")
     
-    # Pull match history permanently from database
     history = fetch_permanent_match_history()
     historical_players = set()
     for m in history:
@@ -530,7 +565,7 @@ with tab_hub:
                 
         if player_matches:
             recent_form = "  ".join(player_matches[-5:])
-            st.write(f"*Last {min(5, len(player_matches))} matches for {selected_player}:* {recent_form}")
+            st.write(f"**Last {min(5, len(player_matches))} matches for {selected_player}:** {recent_form}")
         else:
             st.info(f"No match history recorded for {selected_player} yet.")
     else:
@@ -571,13 +606,13 @@ with tab_recap:
             champ = max(player_wins, key=player_wins.get)
             with st.container(border=True):
                 st.caption("CHAMPION OF THE NIGHT")
-                st.markdown(f"*{champ}*")
+                st.markdown(f"**{champ}**")
                 st.write(f"{player_wins[champ]} wins")
                 
         if longest_match.get("s1"):
             with st.container(border=True):
                 st.caption("LONGEST GAME PLAYED")
-                st.markdown(f"*{longest_match['s1']}–{longest_match['s2']}*")
+                st.markdown(f"**{longest_match['s1']}–{longest_match['s2']}**")
                 st.write(f"{' & '.join(longest_match.get('t1', []))} vs {' & '.join(longest_match.get('t2', []))}")
                 
         if close_matches:
@@ -585,14 +620,14 @@ with tab_recap:
             heroes = [k for k, v in close_matches.items() if v == max_close]
             with st.container(border=True):
                 st.caption("HEARTBREAK HEROES")
-                st.markdown(f"*{' · '.join(heroes)}*")
+                st.markdown(f"**{' · '.join(heroes)}**")
                 st.write(f"{max_close} close matches (decided by 2 points or fewer)")
                 
         if total_points:
             wh = max(total_points, key=total_points.get)
             with st.container(border=True):
                 st.caption("THE WORKHORSE")
-                st.markdown(f"*{wh}*")
+                st.markdown(f"**{wh}**")
                 st.write(f"{total_points[wh]} total points played")
     else:
         st.info("No games finished or recorded in history yet.")
