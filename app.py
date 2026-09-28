@@ -1,4 +1,3 @@
-[12:53, 28/09/2026] Shoj: import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
