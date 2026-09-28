@@ -149,6 +149,7 @@ if not st.session_state.logged_in:
 session_live = is_session_active()
 can_edit = session_live or (st.session_state.role == "admin")
 is_master_admin = (st.session_state.username == "admin")
+can_manage_season = (st.session_state.username in ["admin", "Musa"])
 
 # Sidebar Status
 st.sidebar.write(f"Logged in as: *{st.session_state.username}* ({st.session_state.role.capitalize()})")
@@ -178,14 +179,14 @@ with col_title:
 if is_master_admin:
     # 5 tabs ONLY for 'admin' user
     tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management", "👥 User Management & Logs"])
-elif st.session_state.role == "admin":
-    # 4 tabs for Musa and Simon (No User Management & Logs)
+elif can_manage_season:
+    # 4 tabs for Musa (Has Season Management, NO User Management)
     tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management"])
 elif can_edit:
-    # 3 tabs for standard players on Monday 8-10PM
+    # 3 tabs for Simon and standard players on Monday 8-10PM (Live Courts & Scoring ONLY, NO Season Management)
     tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League"])
 else:
-    # 2 tabs outside session hours
+    # 2 tabs outside session hours for standard users
     tabs = st.tabs(["📊 Today's Leaderboard", "🏆 12-Session League"])
 
 # Helper function to get available resting players
@@ -290,8 +291,8 @@ if can_edit:
                         st.rerun()
                 st.write("---")
 
-    # SEASON CONTROLS TAB (ADMINS ONLY)
-    if st.session_state.role == "admin":
+    # SEASON CONTROLS TAB (STRICTLY ADMIN & MUSA ONLY)
+    if can_manage_season:
         with tabs[3]:
             st.subheader("⚙️ Session & Season Controls")
             col_a, col_b = st.columns(2)
