@@ -32,11 +32,12 @@ try:
 except Exception as e:
     st.error("Could not connect to Supabase database. Please verify Streamlit secrets.")
 
-# HARDCODED ADMIN ACCOUNTS
+# HARDCODED ADMIN ACCOUNTS (Including Aaron)
 ADMIN_ACCOUNTS = {
     "admin": "4dm1n776&",
     "Musa": "4dmiN786&",
-    "Simon": "4dm1nh3ll0"
+    "Simon": "4dm1nh3ll0",
+    "Aaron": "A4dm1n1"
 }
 
 # --- SUPABASE GLOBAL SESSION PERSISTENCE HELPERS ---
@@ -185,7 +186,6 @@ if "player_ratings" not in st.session_state:
 if "last_court_time" not in st.session_state:
     st.session_state.last_court_time = {}
 
-# Initialize temporary builder state if not present
 if "roster_builder" not in st.session_state:
     st.session_state.roster_builder = [
         "Shoj", "Abdul Waheed", "Aaron", "Faisal", "Naveed", 
@@ -255,7 +255,7 @@ if not st.session_state.logged_in:
 session_live = is_session_active()
 can_edit = session_live or (st.session_state.role == "admin")
 is_master_admin = (st.session_state.username == "admin")
-can_manage_season = (st.session_state.username in ["admin", "Musa"])
+can_manage_season = (st.session_state.username in ["admin", "Musa", "Aaron"])
 
 st.sidebar.write(f"Logged in as: **{st.session_state.username}** ({st.session_state.role.capitalize()})")
 if st.session_state.role == "admin": st.sidebar.success("👑 **Admin User: Full Access Active 24/7**")
@@ -321,7 +321,6 @@ def assign_next_match_to_court(court_num, courts_state):
         update_live_court(court_num, None, None)
         return False
 
-# --- CALLBACK: Process Court Finish & Permanent Log ---
 def process_court_finish_callback(court_num, match, s1_key, s2_key):
     s1 = st.session_state.get(s1_key, 0)
     s2 = st.session_state.get(s2_key, 0)
@@ -380,13 +379,11 @@ if tab_courts:
             
         live_courts_state = fetch_live_courts()
         
-        # --- PRE-SESSION ROSTER BUILDER ---
         if not st.session_state.active_players:
             with st.container(border=True):
                 st.subheader("👥 Tonight's Player Roster Builder")
                 st.caption("Add or remove players below, then tap 'Start Session' when ready.")
                 
-                # Quick add row
                 col_add_input, col_add_btn = st.columns([3, 1])
                 with col_add_input:
                     new_roster_name = st.text_input("Player Name", placeholder="Type name here...", label_visibility="collapsed", key="quick_add_roster")
@@ -403,7 +400,6 @@ if tab_courts:
                 st.write("---")
                 st.markdown("**Current Roster List:**")
                 
-                # Render chips/rows for easy removal
                 for idx, player in enumerate(list(st.session_state.roster_builder)):
                     c_name, c_del = st.columns([4, 1])
                     c_name.markdown(f"• {player}")
@@ -440,7 +436,6 @@ if tab_courts:
                         st.success(f"Session {st.session_state.current_session_num} started successfully!")
                         st.rerun()
 
-        # --- MID-GAME ACTIVE SESSION VIEW ---
         if st.session_state.active_players:
             with st.expander("👥 Manage Attendance (Add Late Arrivals / Remove Early Leavers)", expanded=False):
                 col_add1, col_add2 = st.columns([3, 1])
@@ -486,7 +481,6 @@ if tab_courts:
 
             st.subheader("Live Courts")
             score_pill_options = [i for i in range(0, 31)]
-            num_courts = 3 # Default courts display if active
 
             for court_num in range(1, 4):
                 match = live_courts_state.get(court_num)
@@ -694,6 +688,33 @@ with tab_league:
 if tab_season:
     with tab_season:
         st.subheader("⚙️ Session & Season Controls")
+        
+        with st.expander("🛠️ Emergency: Manually Add Missing Match to History", expanded=False):
+            st.caption("If a match wasn't saved or was cleared by mistake, enter the details below to add it back to the permanent log and update the Recap/Hub.")
+            
+            with st.form("manual_match_form"):
+                man_sess = st.number_input("Session Number", min_value=1, max_value=12, value=st.session_state.current_session_num)
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    t1_p1 = st.text_input("Team A Player 1").strip()
+                    t1_p2 = st.text_input("Team A Player 2").strip()
+                    score_a = st.number_input("Team A Score", min_value=0, max_value=30, value=21)
+                with col_m2:
+                    t2_p1 = st.text_input("Team B Player 1").strip()
+                    t2_p2 = st.text_input("Team B Player 2").strip()
+                    score_b = st.number_input("Team B Score", min_value=0, max_value=30, value=15)
+                
+                man_submit = st.form_submit_button("➕ Log Missing Match to Database", use_container_width=True)
+                if man_submit:
+                    if t1_p1 and t1_p2 and t2_p1 and t2_p2:
+                        t1 = [t1_p1, t1_p2]
+                        t2 = [t2_p1, t2_p2]
+                        log_match_to_database(man_sess, t1, t2, score_a, score_b)
+                        st.success("Match successfully added to history log! Check the Recap tab.")
+                    else:
+                        st.error("Please fill in all player names.")
+
+        st.write("---")
         col_a, col_b = st.columns(2)
         with col_a:
             st.markdown("### End Current Session")
