@@ -1,27 +1,4 @@
-[14:12, 28/09/2026] Shoj: import streamlit as st
-import pandas as pd
-import random
-import urllib.parse
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from supabase import create_client, Client
-import math
-from streamlit_autorefresh import st_autorefresh
-
-st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
-
-# Real-time cross-device sync polling (Refreshes every 3 seconds)
-st_autorefresh(interval=3000, key="global_court_sync")
-
-# Custom CSS for compact mobile card layout
-st.markdown("""
-<style>
-    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-    .stButton button { border-radius: 8px; font-weight: bold; }
-    div[data-testid="stVerticalBlock"] > div { margin-bottom: -0.2rem; }
-</style>
-""", unsafe_allow_html=True)…
-[14:17, 28/09/2026] Shoj: import streamlit as st
+import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
