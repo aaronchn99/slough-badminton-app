@@ -751,16 +751,22 @@ if tab_users:
         try:
             users_resp = supabase.table("users").select("*").execute()
             logs_resp = supabase.table("login_logs").select("username, login_time").order("id", desc=True).limit(50).execute()
+            
             df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "created_at"])
+            # Safely drop the password column if it exists in the dataframe so it never displays on screen
+            if "password" in df_users.columns:
+                df_users = df_users.drop(columns=["password"])
+                
             df_logs = pd.DataFrame(logs_resp.data) if logs_resp.data else pd.DataFrame(columns=["username", "login_time"])
+            
             c1, c2 = st.columns(2)
             c1.metric("Registered Players", len(df_users))
             c2.metric("Total Login Events", len(df_logs))
             st.write("---")
             st.markdown("### 📋 Registered Player Accounts")
-            st.dataframe(df_users)
+            st.dataframe(df_users, use_container_width=True)
             st.write("---")
             st.markdown("### 🕒 Recent Login Audit Trail")
-            st.dataframe(df_logs)
+            st.dataframe(df_logs, use_container_width=True)
         except Exception as ex:
             st.warning(f"Database query error: {ex}")
