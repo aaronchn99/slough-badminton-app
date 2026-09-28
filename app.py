@@ -3,7 +3,7 @@ import pandas as pd
 import random
 import urllib.parse
 from datetime import datetime
-import pytz
+from zoneinfo import ZoneInfo
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
@@ -18,8 +18,7 @@ USER_DATABASE = {
 # --- TIME-BASED PERMISSION CHECK ---
 def is_session_active():
     """Returns True ONLY on Mondays between 20:00 (8 PM) and 22:00 (10 PM) UK time."""
-    uk_tz = pytz.timezone("Europe/London")
-    now_uk = datetime.now(uk_tz)
+    now_uk = datetime.now(ZoneInfo("Europe/London"))
     
     is_monday = now_uk.weekday() == 0  # 0 represents Monday
     is_session_time = 20 <= now_uk.hour < 22  # 20:00 to 21:59
@@ -89,7 +88,6 @@ if not st.session_state.logged_in:
     st.stop()
 
 # --- DYNAMIC PERMISSION CHECK ---
-# Admins always have full access; regular users get edit rights during Monday 8PM - 10PM
 session_live = is_session_active()
 can_edit = session_live or (st.session_state.role == "admin")
 
