@@ -6,16 +6,9 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client, Client
 import math
-import extra_streamlit_components as stx
+import uuid
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
-
-# --- COOKIE MANAGER FOR PERSISTENT LOGINS ---
-@st.cache_resource(experimental_allow_widgets=True)
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
 
 # --- SUPABASE DATABASE CONNECTION ---
 @st.cache_resource
@@ -120,14 +113,15 @@ def is_session_active():
     now_uk = datetime.now(ZoneInfo("Europe/London"))
     return now_uk.weekday() == 0 and (20 <= now_uk.hour < 22)
 
-# --- AUTO-RESTORE LOGIN FROM COOKIES ---
-saved_username = cookie_manager.get("badminton_user")
-saved_role = cookie_manager.get("badminton_role")
+# --- URL QUERY PARAMS FOR PERSISTENT LOGINS ON REFRESH ---
+query_params = st.query_params
+saved_user = query_params.get("user")
+saved_role = query_params.get("role")
 
 if "logged_in" not in st.session_state:
-    if saved_username and saved_role:
+    if saved_user and saved_role:
         st.session_state.logged_in = True
-        st.session_state.username = saved_username
+        st.session_state.username = saved_user
         st.session_state.role = saved_role
         st.session_state.player_ratings = load_player_ratings()
     else:
@@ -191,9 +185,9 @@ if not st.session_state.logged_in:
                         st.session_state.role = role
                         st.session_state.player_ratings = load_player_ratings()
                         
-                        # Save persistent cookies for 30 days
-                        cookie_manager.set("badminton_user", username_input, key="cookie_user", expires_at=datetime.now().replace(year=datetime.now().year + 1))
-                        cookie_manager.set("badminton_role", role, key="cookie_role", expires_at=datetime.now().replace(year=datetime.now().year + 1))
+                        # Store in URL parameters for persistent state across refreshes
+                        st.query_params["user"] = username_input
+                        st.query_params["role"] = role
                         
                         log_login_event(username_input)
                         st.success(f"Welcome back, {username_input}!")
@@ -238,8 +232,7 @@ else:
     st.sidebar.info("🔒 *Outside Session Hours: Read-Only Mode*")
 
 if st.sidebar.button("Log Out"):
-    cookie_manager.delete("badminton_user", key="delete_user")
-    cookie_manager.delete("badminton_role", key="delete_role")
+    st.query_params.clear()
     st.session_state.logged_in = False
     st.session_state.username = None
     st.session_state.role = None
@@ -455,11 +448,11 @@ if can_edit:
                     
                     st.write("---")
                     st.markdown("### 📋 Registered Player Accounts & Grades")
-                    st.dataframe(df_users, use_container_width=True)
+                    st.dataframe(df_users, width="stretch")
                     
                     st.write("---")
                     st.markdown("### 🕒 Recent Login Audit Trail")
-                    st.dataframe(df_logs, use_container_width=True)
+                    st.dataframe(df_logs, width="stretch")
                 except Exception as ex:
                     st.warning(f"Database query error: {ex}")
 
@@ -478,7 +471,7 @@ with tabs[today_idx]:
             for k, v in st.session_state.session_scores.items()
         ]).sort_values(by="Session Points", ascending=False).reset_index(drop=True)
         df_today.index += 1
-        st.dataframe(df_today, use_container_width=True)
+        st.dataframe(df_today, width="stretch")
     else:
         st.info("No games recorded for this session yet.")
 
@@ -507,6 +500,6 @@ with tabs[league_idx]:
             cols[2].metric("🥉 3rd Place", f"{df_league.iloc[2]['Player']} [{df_league.iloc[2]['Grade']}]", f"{df_league.iloc[2]['Total Points']} pts")
             
         st.write("---")
-        st.dataframe(df_league, use_container_width=True)
+        st.dataframe(df_league, width="stretch")
     else:
         st.info("No overall standings recorded yet.")
