@@ -1,28 +1,4 @@
-[22:37, 28/09/2026] Shoj: import streamlit as st
-import pandas as pd
-import random
-import urllib.parse
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from supabase import create_client, Client
-import time
-
-st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
-
-# Custom CSS for compact mobile card layout
-st.markdown("""
-<style>
-    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-    .stButton button { border-radius: 8px; font-weight: bold; }
-    div[data-testid="stVerticalBlock"] > div { margin-bottom: -0.2rem; }
-    .recap-card { background-color: #1E232F; padding: 15px; border-radius: 10px; margin-bottom: 15px; }
-</style>
-""", unsafe_allow_html=True)
-
-# --- SUPABASE DATABASE CONNECTION ---
-@st.cache_resource
-def ini…
-[22:39, 28/09/2026] Shoj: import streamlit as st
+import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
