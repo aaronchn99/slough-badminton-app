@@ -1,4 +1,4 @@
-import streamlit as st
+[12:53, 28/09/2026] Shoj: import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
@@ -8,6 +8,53 @@ from supabase import create_client, Client
 import math
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
+
+# --- SUPABASE DATABASE CONNECTION ---
+@st.cache_resource
+def init_supabase():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+try:
+    supabase: Client = init_supabase()
+except Exception as e:
+    st.error("Could not connect to Supabase database. Please verify Streamlit secrets.")
+
+# HARDCODED ADMIN ACCOUNTS
+ADMIN_ACCOUNTS = {
+    "admin": "4dm1n776&",
+    "Musa": "4dmiN786&",
+    "Simon": "4dm1nh3ll0"
+}
+
+# --- C…
+[12:58, 28/09/2026] Shoj: import streamlit as st
+import pandas as pd
+import random
+import urllib.parse
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from supabase import create_client, Client
+import math
+
+st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
+
+# Custom CSS for compact mobile cards
+st.markdown("""
+<style>
+    .element-container { margin-bottom: 0.5rem; }
+    .stButton button { width: 100%; border-radius: 8px; font-weight: bold; }
+    div[data-testid="stMetricValue"] { font-size: 1.2rem; }
+    .court-card {
+        background-color: #1e293b;
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 15px;
+        border: 1px solid #334155;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # --- SUPABASE DATABASE CONNECTION ---
 @st.cache_resource
@@ -170,8 +217,8 @@ SVG_URL = "data:image/svg+xml;utf8," + urllib.parse.quote(RAW_SVG)
 if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image(SVG_URL, width=220)
-        st.title("Slough Badminton Club (Monday)")
+        st.image(SVG_URL, width=180)
+        st.title("Slough Badminton Club")
         
         login_tab, signup_tab = st.tabs(["🔒 Log In", "📝 Sign Up"])
         
@@ -180,7 +227,7 @@ if not st.session_state.logged_in:
                 st.subheader("Log In")
                 username_input = st.text_input("Username").strip()
                 password_input = st.text_input("Password", type="password").strip()
-                submit_button = st.form_submit_button("Log In")
+                submit_button = st.form_submit_button("Log In", use_container_width=True)
                 
                 if submit_button:
                     role = get_user_role(username_input, password_input)
@@ -205,7 +252,7 @@ if not st.session_state.logged_in:
                 new_user = st.text_input("Choose Username").strip()
                 new_pass = st.text_input("Choose Password", type="password").strip()
                 confirm_pass = st.text_input("Confirm Password", type="password").strip()
-                signup_btn = st.form_submit_button("Create Account")
+                signup_btn = st.form_submit_button("Create Account", use_container_width=True)
                 
                 if signup_btn:
                     if new_pass != confirm_pass:
@@ -235,7 +282,7 @@ elif session_live:
 else:
     st.sidebar.info("🔒 *Outside Session Hours: Read-Only Mode*")
 
-if st.sidebar.button("Log Out"):
+if st.sidebar.button("Log Out", use_container_width=True):
     st.query_params.clear()
     st.session_state.logged_in = False
     st.session_state.username = None
@@ -246,20 +293,20 @@ if st.sidebar.button("Log Out"):
 # Display Header
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
-    st.image(SVG_URL, width=140)
+    st.image(SVG_URL, width=110)
 with col_title:
     st.title("Slough Badminton Club")
     st.caption(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
 
 # Tabs Configuration
 if is_master_admin:
-    tabs = st.tabs(["🎾 Live Courts", "📊 Today's Standings", "🏆 12-Session League", "⚙️ Season", "👥 Users & Logs"])
+    tabs = st.tabs(["🎾 Courts", "📊 Standings", "🏆 League", "⚙️ Season", "👥 Users"])
 elif can_manage_season:
-    tabs = st.tabs(["🎾 Live Courts", "📊 Today's Standings", "🏆 12-Session League", "⚙️ Season"])
+    tabs = st.tabs(["🎾 Courts", "📊 Standings", "🏆 League", "⚙️ Season"])
 elif can_edit:
-    tabs = st.tabs(["🎾 Live Courts", "📊 Today's Standings", "🏆 12-Session League"])
+    tabs = st.tabs(["🎾 Courts", "📊 Standings", "🏆 League"])
 else:
-    tabs = st.tabs(["📊 Today's Standings", "🏆 12-Session League"])
+    tabs = st.tabs(["📊 Standings", "🏆 League"])
 
 # Helper function to get resting players sorted by least played
 def get_resting_players():
@@ -332,12 +379,18 @@ if can_edit:
             formatted_resting = [f"{p} [{get_letter_grade(st.session_state.player_ratings.get(p, 1200))}]" for p in resting_players]
             st.info(f"⏸️ *Queue ({len(resting_players)}):* {', '.join(formatted_resting) if formatted_resting else 'None'}")
             
-            st.subheader("2. Live Courts")
-            
-            score_options = list(range(0, 22))  # 0 to 21
+            st.subheader("Live Courts")
             
             for court_num in range(1, num_courts + 1):
                 match = st.session_state.courts_state.get(court_num)
+                
+                # State keys for score steppers
+                s1_key = f"c{court_num}_score1"
+                s2_key = f"c{court_num}_score2"
+                if s1_key not in st.session_state:
+                    st.session_state[s1_key] = 0
+                if s2_key not in st.session_state:
+                    st.session_state[s2_key] = 0
                 
                 with st.container(border=True):
                     st.markdown(f"#### 🏸 Court {court_num}")
@@ -350,49 +403,79 @@ if can_edit:
                         t1_g1, t1_g2 = get_letter_grade(r.get(t1_p1, 1200)), get_letter_grade(r.get(t1_p2, 1200))
                         t2_g1, t2_g2 = get_letter_grade(r.get(t2_p1, 1200)), get_letter_grade(r.get(t2_p2, 1200))
                         
+                        # MOBILE SIDE-BY-SIDE CARD LAYOUT
                         col1, col_vs, col2 = st.columns([5, 2, 5])
                         
                         with col1:
                             st.caption("🔵 *Team A*")
                             st.write(f"*{t1_p1}* [{t1_g1}]")
                             st.write(f"*{t1_p2}* [{t1_g2}]")
-                            s1 = st.selectbox("Score A", options=score_options, index=0, key=f"c{court_num}_s1", label_visibility="collapsed")
+                            
+                            st.markdown(f"<h2 style='text-align: center; margin: 0;'>{st.session_state[s1_key]}</h2>", unsafe_allow_html=True)
+                            btn_c1, btn_c2 = st.columns(2)
+                            if btn_c1.button("−", key=f"c{court_num}_s1_minus"):
+                                st.session_state[s1_key] = max(0, st.session_state[s1_key] - 1)
+                                st.rerun()
+                            if btn_c2.button("+", key=f"c{court_num}_s1_plus"):
+                                st.session_state[s1_key] = min(30, st.session_state[s1_key] + 1)
+                                st.rerun()
                         
                         with col_vs:
-                            st.markdown("<h4 style='text-align: center; margin-top: 35px;'>VS</h4>", unsafe_allow_html=True)
+                            st.markdown("<h4 style='text-align: center; margin-top: 50px;'>VS</h4>", unsafe_allow_html=True)
                         
                         with col2:
                             st.caption("🔴 *Team B*")
                             st.write(f"*{t2_p1}* [{t2_g1}]")
                             st.write(f"*{t2_p2}* [{t2_g2}]")
-                            s2 = st.selectbox("Score B", options=score_options, index=0, key=f"c{court_num}_s2", label_visibility="collapsed")
+                            
+                            st.markdown(f"<h2 style='text-align: center; margin: 0;'>{st.session_state[s2_key]}</h2>", unsafe_allow_html=True)
+                            btn_c3, btn_c4 = st.columns(2)
+                            if btn_c3.button("−", key=f"c{court_num}_s2_minus"):
+                                st.session_state[s2_key] = max(0, st.session_state[s2_key] - 1)
+                                st.rerun()
+                            if btn_c4.button("+", key=f"c{court_num}_s2_plus"):
+                                st.session_state[s2_key] = min(30, st.session_state[s2_key] + 1)
+                                st.rerun()
                             
                         st.write("")
                         if st.button(f"💾 Save & Finish Court {court_num}", key=f"btn_{court_num}", type="primary", use_container_width=True):
-                            if s1 > s2:
+                            s1 = st.session_state[s1_key]
+                            s2 = st.session_state[s2_key]
+                            
+                            # VALIDATION: At least one team MUST reach 21+ points
+                            if s1 < 21 and s2 < 21:
+                                st.error(f"⚠️ Cannot finish Court {court_num}: At least one team must reach at least 21 points!")
+                            elif s1 == s2:
+                                st.error(f"⚠️ Cannot finish Court {court_num}: Match cannot end in a draw!")
+                            else:
+                                if s1 > s2:
+                                    for p in match["team1"]:
+                                        st.session_state.session_scores[p] += 2
+                                        st.session_state.league_standings[p] += 2
+                                elif s2 > s1:
+                                    for p in match["team2"]:
+                                        st.session_state.session_scores[p] += 2
+                                        st.session_state.league_standings[p] += 2
+                                
+                                t1_avg = (r.get(t1_p1, 1200) + r.get(t1_p2, 1200)) / 2.0
+                                t2_avg = (r.get(t2_p1, 1200) + r.get(t2_p2, 1200)) / 2.0
+                                
+                                d1, d2 = calculate_rating_change(t1_avg, t2_avg, s1, s2)
+                                
                                 for p in match["team1"]:
-                                    st.session_state.session_scores[p] += 2
-                                    st.session_state.league_standings[p] += 2
-                            elif s2 > s1:
+                                    st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d1)
+                                    save_player_rating(p, st.session_state.player_ratings[p])
                                 for p in match["team2"]:
-                                    st.session_state.session_scores[p] += 2
-                                    st.session_state.league_standings[p] += 2
-                            
-                            t1_avg = (r.get(t1_p1, 1200) + r.get(t1_p2, 1200)) / 2.0
-                            t2_avg = (r.get(t2_p1, 1200) + r.get(t2_p2, 1200)) / 2.0
-                            
-                            d1, d2 = calculate_rating_change(t1_avg, t2_avg, s1, s2)
-                            
-                            for p in match["team1"]:
-                                st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d1)
-                                save_player_rating(p, st.session_state.player_ratings[p])
-                            for p in match["team2"]:
-                                st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
-                                save_player_rating(p, st.session_state.player_ratings[p])
-                            
-                            assign_next_match_to_court(court_num)
-                            st.success(f"Court {court_num} score saved!")
-                            st.rerun()
+                                    st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
+                                    save_player_rating(p, st.session_state.player_ratings[p])
+                                
+                                # Reset steppers for next match on this court
+                                st.session_state[s1_key] = 0
+                                st.session_state[s2_key] = 0
+                                
+                                assign_next_match_to_court(court_num)
+                                st.success(f"Court {court_num} score saved!")
+                                st.rerun()
                     else:
                         st.caption("No active match.")
                         if st.button(f"⚡ Start Match on Court {court_num}", key=f"start_{court_num}", use_container_width=True):
