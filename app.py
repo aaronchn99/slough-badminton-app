@@ -1,4 +1,27 @@
-import streamlit as st
+[14:12, 28/09/2026] Shoj: import streamlit as st
+import pandas as pd
+import random
+import urllib.parse
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from supabase import create_client, Client
+import math
+from streamlit_autorefresh import st_autorefresh
+
+st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
+
+# Real-time cross-device sync polling (Refreshes every 3 seconds)
+st_autorefresh(interval=3000, key="global_court_sync")
+
+# Custom CSS for compact mobile card layout
+st.markdown("""
+<style>
+    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+    .stButton button { border-radius: 8px; font-weight: bold; }
+    div[data-testid="stVerticalBlock"] > div { margin-bottom: -0.2rem; }
+</style>
+""", unsafe_allow_html=True)…
+[14:17, 28/09/2026] Shoj: import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
@@ -206,7 +229,6 @@ if "logged_in" not in st.session_state or not st.session_state.logged_in:
         st.session_state.username = None
         st.session_state.role = None
 
-# Initialize and pull persistent session data from Supabase DB on every run
 if "player_ratings" not in st.session_state:
     st.session_state.player_ratings = load_player_ratings()
 
@@ -357,13 +379,19 @@ def assign_next_match_to_court(court_num, courts_state):
         update_live_court(court_num, None, None)
         return False
 
-# Function to save a court match result and prevent double execution
+# Function to save a court match result cleanly with guard logic
 def save_court_result(court_num, match, s1, s2):
+    guard_key = f"court_{court_num}_saving"
+    if st.session_state.get(guard_key, False):
+        return False, "Match is already processing..."
+
     if s1 < 21 and s2 < 21:
         return False, f"⚠️ Court {court_num}: At least one team must reach 21 points!"
     if s1 == s2:
         return False, f"⚠️ Court {court_num}: Match cannot end in a draw!"
         
+    st.session_state[guard_key] = True
+
     r = st.session_state.player_ratings
     t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
     t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
@@ -389,14 +417,13 @@ def save_court_result(court_num, match, s1, s2):
         st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
         save_player_rating(p, st.session_state.player_ratings[p])
 
-    # Clear pill keys
-    if f"c{court_num}_s1_pills" in st.session_state:
-        del st.session_state[f"c{court_num}_s1_pills"]
-    if f"c{court_num}_s2_pills" in st.session_state:
-        del st.session_state[f"c{court_num}_s2_pills"]
+    st.session_state.pop(f"c{court_num}_s1_pills", None)
+    st.session_state.pop(f"c{court_num}_s2_pills", None)
 
     update_live_court(court_num, None, None)
     save_global_session_state()
+
+    st.session_state[guard_key] = False
     return True, f"Court {court_num} score saved!"
 
 # --- MATCHMAKER & SCORING ---
