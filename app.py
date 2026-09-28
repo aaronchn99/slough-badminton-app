@@ -9,18 +9,32 @@ import math
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
-# Custom CSS for compact mobile card layout
+# Custom CSS for Mobile Flexbox Layout (Prevents vertical stacking on phones)
 st.markdown("""
 <style>
-    .element-container { margin-bottom: 0.5rem; }
-    .stButton button { width: 100%; border-radius: 8px; font-weight: bold; }
-    div[data-testid="stMetricValue"] { font-size: 1.2rem; }
-    .court-card {
+    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+    .stButton button { border-radius: 8px; font-weight: bold; }
+    div[data-testid="stVerticalBlock"] > div { margin-bottom: -0.2rem; }
+    
+    .mobile-court-card {
         background-color: #1e293b;
-        border-radius: 12px;
-        padding: 12px;
-        margin-bottom: 15px;
         border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 12px;
+    }
+    .court-header {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: #f8fafc;
+        margin-bottom: 6px;
+    }
+    .team-box {
+        background-color: #0f172a;
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        line-height: 1.2;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -167,7 +181,6 @@ if "player_ratings" not in st.session_state:
 if "courts_state" not in st.session_state:
     st.session_state.courts_state = {}
 
-# Clean SVG Logo Graphic
 RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260">
     <circle cx="130" cy="130" r="120" fill="#1E4867" stroke="#F9F8F3" stroke-width="6"/>
     <path id="archPath" d="M 35,130 A 95,95 0 1,1 225,130" fill="none" />
@@ -262,7 +275,7 @@ if st.sidebar.button("Log Out", use_container_width=True):
 # Display Header
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
-    st.image(SVG_URL, width=110)
+    st.image(SVG_URL, width=100)
 with col_title:
     st.title("Slough Badminton Club")
     st.caption(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
@@ -319,7 +332,7 @@ if can_edit:
     with tabs[0]:
         with st.expander("⚙️ Session Setup (Tap to expand/hide)", expanded=not bool(st.session_state.active_players)):
             default_names = "Shoj\nAbdul Waheed\nAaron\nFaisal\nNaveed\nAbdulKhader\nRyan\nAbdullah sr\nYousuf\nAamer\nMohsin\nSimon\nJoe S\nHassan\nHabeeb"
-            player_text = st.text_area("Enter Player Names Present Tonight (one per line):", value=default_names, height=120)
+            player_text = st.text_area("Enter Player Names Present Tonight (one per line):", value=default_names, height=100)
             
             num_courts = st.number_input("Number of Courts Available", min_value=1, max_value=6, value=3)
             
@@ -350,15 +363,10 @@ if can_edit:
             
             st.subheader("Live Courts")
             
+            score_options = list(range(0, 31))  # 0 to 30
+            
             for court_num in range(1, num_courts + 1):
                 match = st.session_state.courts_state.get(court_num)
-                
-                s1_key = f"c{court_num}_score1"
-                s2_key = f"c{court_num}_score2"
-                if s1_key not in st.session_state:
-                    st.session_state[s1_key] = 0
-                if s2_key not in st.session_state:
-                    st.session_state[s2_key] = 0
                 
                 with st.container(border=True):
                     st.markdown(f"#### 🏸 Court {court_num}")
@@ -371,44 +379,31 @@ if can_edit:
                         t1_g1, t1_g2 = get_letter_grade(r.get(t1_p1, 1200)), get_letter_grade(r.get(t1_p2, 1200))
                         t2_g1, t2_g2 = get_letter_grade(r.get(t2_p1, 1200)), get_letter_grade(r.get(t2_p2, 1200))
                         
-                        col1, col_vs, col2 = st.columns([5, 2, 5])
+                        # SCORING ROW: Team A | Scroll Wheel | VS | Scroll Wheel | Team B
+                        col_t1, col_s1, col_vs, col_s2, col_t2 = st.columns([3, 2, 1, 2, 3])
                         
-                        with col1:
+                        with col_t1:
                             st.caption("🔵 *Team A*")
-                            st.write(f"*{t1_p1}* [{t1_g1}]")
-                            st.write(f"*{t1_p2}* [{t1_g2}]")
+                            st.write(f"• {t1_p1} [{t1_g1}]")
+                            st.write(f"• {t1_p2} [{t1_g2}]")
                             
-                            st.markdown(f"<h2 style='text-align: center; margin: 0;'>{st.session_state[s1_key]}</h2>", unsafe_allow_html=True)
-                            btn_c1, btn_c2 = st.columns(2)
-                            if btn_c1.button("−", key=f"c{court_num}_s1_minus"):
-                                st.session_state[s1_key] = max(0, st.session_state[s1_key] - 1)
-                                st.rerun()
-                            if btn_c2.button("+", key=f"c{court_num}_s1_plus"):
-                                st.session_state[s1_key] = min(30, st.session_state[s1_key] + 1)
-                                st.rerun()
-                        
+                        with col_s1:
+                            s1 = st.selectbox("Score A", options=score_options, index=0, key=f"c{court_num}_s1", label_visibility="collapsed")
+                            
                         with col_vs:
-                            st.markdown("<h4 style='text-align: center; margin-top: 50px;'>VS</h4>", unsafe_allow_html=True)
-                        
-                        with col2:
-                            st.caption("🔴 *Team B*")
-                            st.write(f"*{t2_p1}* [{t2_g1}]")
-                            st.write(f"*{t2_p2}* [{t2_g2}]")
+                            st.markdown("<h4 style='text-align: center; margin-top: 10px;'>VS</h4>", unsafe_allow_html=True)
                             
-                            st.markdown(f"<h2 style='text-align: center; margin: 0;'>{st.session_state[s2_key]}</h2>", unsafe_allow_html=True)
-                            btn_c3, btn_c4 = st.columns(2)
-                            if btn_c3.button("−", key=f"c{court_num}_s2_minus"):
-                                st.session_state[s2_key] = max(0, st.session_state[s2_key] - 1)
-                                st.rerun()
-                            if btn_c4.button("+", key=f"c{court_num}_s2_plus"):
-                                st.session_state[s2_key] = min(30, st.session_state[s2_key] + 1)
-                                st.rerun()
+                        with col_s2:
+                            s2 = st.selectbox("Score B", options=score_options, index=0, key=f"c{court_num}_s2", label_visibility="collapsed")
+                            
+                        with col_t2:
+                            st.caption("🔴 *Team B*")
+                            st.write(f"• {t2_p1} [{t2_g1}]")
+                            st.write(f"• {t2_p2} [{t2_g2}]")
                             
                         st.write("")
                         if st.button(f"💾 Save & Finish Court {court_num}", key=f"btn_{court_num}", type="primary", use_container_width=True):
-                            s1 = st.session_state[s1_key]
-                            s2 = st.session_state[s2_key]
-                            
+                            # VALIDATION: At least one team MUST reach at least 21
                             if s1 < 21 and s2 < 21:
                                 st.error(f"⚠️ Cannot finish Court {court_num}: At least one team must reach at least 21 points!")
                             elif s1 == s2:
@@ -434,9 +429,6 @@ if can_edit:
                                 for p in match["team2"]:
                                     st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
                                     save_player_rating(p, st.session_state.player_ratings[p])
-                                
-                                st.session_state[s1_key] = 0
-                                st.session_state[s2_key] = 0
                                 
                                 assign_next_match_to_court(court_num)
                                 st.success(f"Court {court_num} score saved!")
