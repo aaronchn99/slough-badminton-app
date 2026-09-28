@@ -334,6 +334,8 @@ if can_edit:
             
             st.subheader("2. Live Courts")
             
+            score_options = list(range(0, 22))  # 0 to 21
+            
             for court_num in range(1, num_courts + 1):
                 match = st.session_state.courts_state.get(court_num)
                 
@@ -348,14 +350,13 @@ if can_edit:
                         t1_g1, t1_g2 = get_letter_grade(r.get(t1_p1, 1200)), get_letter_grade(r.get(t1_p2, 1200))
                         t2_g1, t2_g2 = get_letter_grade(r.get(t2_p1, 1200)), get_letter_grade(r.get(t2_p2, 1200))
                         
-                        # MOBILE-FRIENDLY COMPACT COLUMNS
                         col1, col_vs, col2 = st.columns([5, 2, 5])
                         
                         with col1:
                             st.caption("🔵 *Team A*")
                             st.write(f"*{t1_p1}* [{t1_g1}]")
                             st.write(f"*{t1_p2}* [{t1_g2}]")
-                            s1 = st.number_input("Score A", min_value=0, max_value=30, value=0, key=f"c{court_num}_s1", label_visibility="collapsed")
+                            s1 = st.selectbox("Score A", options=score_options, index=0, key=f"c{court_num}_s1", label_visibility="collapsed")
                         
                         with col_vs:
                             st.markdown("<h4 style='text-align: center; margin-top: 35px;'>VS</h4>", unsafe_allow_html=True)
@@ -364,7 +365,7 @@ if can_edit:
                             st.caption("🔴 *Team B*")
                             st.write(f"*{t2_p1}* [{t2_g1}]")
                             st.write(f"*{t2_p2}* [{t2_g2}]")
-                            s2 = st.number_input("Score B", min_value=0, max_value=30, value=0, key=f"c{court_num}_s2", label_visibility="collapsed")
+                            s2 = st.selectbox("Score B", options=score_options, index=0, key=f"c{court_num}_s2", label_visibility="collapsed")
                             
                         st.write("")
                         if st.button(f"💾 Save & Finish Court {court_num}", key=f"btn_{court_num}", type="primary", use_container_width=True):
