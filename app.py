@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
-# HARDCODED USER ACCOUNTS
+# HARDCODED USER ACCOUNTS (Admin access 24/7)
 USER_DATABASE = {
     "admin": {"password": "4dm1n776&", "role": "admin"},
     "Musa": {"password": "4dmiN786&", "role": "admin"},
@@ -48,6 +48,9 @@ if "play_counts" not in st.session_state:
 if "courts_state" not in st.session_state:
     st.session_state.courts_state = {}
 
+if "registered_users" not in st.session_state:
+    st.session_state.registered_users = {}
+
 # Clean SVG Badge Vector Graphic
 RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260">
     <circle cx="130" cy="130" r="120" fill="#1E4867" stroke="#F9F8F3" stroke-width="6"/>
@@ -63,28 +66,57 @@ RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width
 
 SVG_URL = "data:image/svg+xml;utf8," + urllib.parse.quote(RAW_SVG)
 
-# --- LOGIN SCREEN ---
+# --- LOGIN & SIGNUP SCREEN ---
 if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.image(SVG_URL, width=220)
         st.title("Slough Badminton Club (Monday)")
         
-        with st.form("login_form"):
-            st.subheader("🔒 Log In")
-            username_input = st.text_input("Username").strip()
-            password_input = st.text_input("Password", type="password").strip()
-            submit_button = st.form_submit_button("Log In")
-            
-            if submit_button:
-                if username_input in USER_DATABASE and USER_DATABASE[username_input]["password"] == password_input:
-                    st.session_state.logged_in = True
-                    st.session_state.username = username_input
-                    st.session_state.role = USER_DATABASE[username_input]["role"]
-                    st.success(f"Welcome back, {username_input}!")
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password.")
+        login_tab, signup_tab = st.tabs(["🔒 Log In", "📝 Sign Up"])
+        
+        with login_tab:
+            with st.form("login_form"):
+                st.subheader("Log In")
+                username_input = st.text_input("Username").strip()
+                password_input = st.text_input("Password", type="password").strip()
+                submit_button = st.form_submit_button("Log In")
+                
+                if submit_button:
+                    db = st.session_state.registered_users
+                    if username_input in USER_DATABASE and USER_DATABASE[username_input]["password"] == password_input:
+                        st.session_state.logged_in = True
+                        st.session_state.username = username_input
+                        st.session_state.role = USER_DATABASE[username_input]["role"]
+                        st.success(f"Welcome back, {username_input}!")
+                        st.rerun()
+                    elif username_input in db and db[username_input]["password"] == password_input:
+                        st.session_state.logged_in = True
+                        st.session_state.username = username_input
+                        st.session_state.role = "player"
+                        st.success(f"Welcome back, {username_input}!")
+                        st.rerun()
+                    else:
+                        st.error("Invalid username or password.")
+
+        with signup_tab:
+            with st.form("signup_form"):
+                st.subheader("Create Account")
+                new_user = st.text_input("Choose Username").strip()
+                new_pass = st.text_input("Choose Password", type="password").strip()
+                confirm_pass = st.text_input("Confirm Password", type="password").strip()
+                signup_btn = st.form_submit_button("Create Account")
+                
+                if signup_btn:
+                    if new_user in USER_DATABASE or new_user in st.session_state.registered_users:
+                        st.error("Username already taken.")
+                    elif new_pass != confirm_pass:
+                        st.error("Passwords do not match.")
+                    elif not new_user or not new_pass:
+                        st.error("Please fill in all fields.")
+                    else:
+                        st.session_state.registered_users[new_user] = {"password": new_pass, "role": "player"}
+                        st.success("Account created successfully! You can now log in.")
     st.stop()
 
 # --- DYNAMIC PERMISSION CHECK ---
