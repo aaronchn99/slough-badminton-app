@@ -1,28 +1,4 @@
-[13:07, 28/09/2026] Shoj: import streamlit as st
-import pandas as pd
-import random
-import urllib.parse
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from supabase import create_client, Client
-import math
-
-st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
-
-# Custom CSS for Mobile Flexbox Layout (Prevents vertical stacking on phones)
-st.markdown("""
-<style>
-    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-    .stButton button { border-radius: 8px; font-weight: bold; }
-    div[data-testid="stVerticalBlock"] > div { margin-bottom: -0.2rem; }
-    
-    .mobile-court-card {
-        background-color: #1e293b;
-        border: 1px solid #334155;
-        border-radius: 10px;
-        padding: 10px;
-        margin-bottom:…
-[13:21, 28/09/2026] Shoj: import streamlit as st
+import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
