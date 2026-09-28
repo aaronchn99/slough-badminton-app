@@ -5,6 +5,8 @@ import urllib.parse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client, Client
+import math
+import itertools
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
@@ -20,19 +22,65 @@ try:
 except Exception as e:
     st.error("Could not connect to Supabase database. Please verify Streamlit secrets.")
 
-# HARDCODED ADMIN ACCOUNTS (Retain full access to court & match management 24/7)
+# HARDCODED ADMIN ACCOUNTS
 ADMIN_ACCOUNTS = {
     "admin": "4dm1n776&",
     "Musa": "4dmiN786&",
     "Simon": "4dm1nh3ll0"
 }
 
-# Helper DB Functions
+# --- ELO & RATING HELPER FUNCTIONS ---
+def get_letter_grade(rating):
+    r = round(rating)
+    if r >= 1600:
+        return f"A+ ({r})"
+    elif r >= 1400:
+        return f"A ({r})"
+    elif r >= 1300:
+        return f"B+ ({r})"
+    elif r >= 1150:
+        return f"B ({r})"
+    elif r >= 1050:
+        return f"C+ ({r})"
+    else:
+        return f"C ({r})"
+
+def calculate_rating_change(team1_avg, team2_avg, score1, score2, k_factor=32):
+    margin = abs(score1 - score2)
+    margin_multiplier = math.log(margin + 1) if margin > 0 else 1.0
+    
+    expected1 = 1.0 / (1.0 + 10 ** ((team2_avg - team1_avg) / 400.0))
+    expected2 = 1.0 - expected1
+    
+    actual1 = 1.0 if score1 > score2 else (0.5 if score1 == score2 else 0.0)
+    actual2 = 1.0 - actual1
+    
+    delta1 = round(k_factor * margin_multiplier * (actual1 - expected1))
+    delta2 = round(k_factor * margin_multiplier * (actual2 - expected2))
+    
+    return delta1, delta2
+
+def load_player_ratings():
+    ratings = {}
+    try:
+        resp = supabase.table("users").select("username, rating").execute()
+        if resp.data:
+            for row in resp.data:
+                ratings[row["username"]] = row.get("rating") if row.get("rating") is not None else 1200
+    except Exception:
+        pass
+    return ratings
+
+def save_player_rating(username, new_rating):
+    try:
+        supabase.table("users").update({"rating": new_rating}).eq("username", username).execute()
+    except Exception:
+        pass
+
+# DB Helper Functions
 def get_user_role(username, password):
     if username in ADMIN_ACCOUNTS and ADMIN_ACCOUNTS[username] == password:
         return "admin"
-    
-    # Check Supabase users table
     response = supabase.table("users").select("*").eq("username", username).eq("password", password).execute()
     if response.data:
         return response.data[0]["role"]
@@ -41,12 +89,10 @@ def get_user_role(username, password):
 def register_user(username, password):
     if username in ADMIN_ACCOUNTS:
         return False, "Username reserved for Admin."
-    
     response = supabase.table("users").select("username").eq("username", username).execute()
     if response.data:
         return False, "Username already exists."
-    
-    supabase.table("users").insert({"username": username, "password": password, "role": "player"}).execute()
+    supabase.table("users").insert({"username": username, "password": password, "role": "player", "rating": 1200}).execute()
     return True, "Account created successfully!"
 
 def log_login_event(username):
@@ -77,11 +123,13 @@ if "league_standings" not in st.session_state:
     st.session_state.league_standings = {}
 if "play_counts" not in st.session_state:
     st.session_state.play_counts = {}
+if "player_ratings" not in st.session_state:
+    st.session_state.player_ratings = {}
 
 if "courts_state" not in st.session_state:
     st.session_state.courts_state = {}
 
-# Clean SVG Badge Vector Graphic
+# SVG Logo Graphic
 RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260">
     <circle cx="130" cy="130" r="120" fill="#1E4867" stroke="#F9F8F3" stroke-width="6"/>
     <path id="archPath" d="M 35,130 A 95,95 0 1,1 225,130" fill="none" />
@@ -118,6 +166,7 @@ if not st.session_state.logged_in:
                         st.session_state.logged_in = True
                         st.session_state.username = username_input
                         st.session_state.role = role
+                        st.session_state.player_ratings = load_player_ratings()
                         log_login_event(username_input)
                         st.success(f"Welcome back, {username_input}!")
                         st.rerun()
@@ -177,19 +226,15 @@ with col_title:
 
 # Tabs Configuration
 if is_master_admin:
-    # 5 tabs ONLY for 'admin' user
     tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management", "👥 User Management & Logs"])
 elif can_manage_season:
-    # 4 tabs for Musa (Has Season Management, NO User Management)
     tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management"])
 elif can_edit:
-    # 3 tabs for Simon and standard players on Monday 8-10PM (Live Courts & Scoring ONLY, NO Season Management)
     tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League"])
 else:
-    # 2 tabs outside session hours for standard users
     tabs = st.tabs(["📊 Today's Leaderboard", "🏆 12-Session League"])
 
-# Helper function to get available resting players
+# Helper function to get resting players sorted by least played
 def get_resting_players():
     currently_playing = set()
     for c, match in st.session_state.courts_state.items():
@@ -200,16 +245,29 @@ def get_resting_players():
     resting = [p for p in st.session_state.active_players if p not in currently_playing]
     return sorted(resting, key=lambda p: (st.session_state.play_counts[p], random.random()))
 
+# Skill-Balanced Matchmaker Function
 def assign_next_match_to_court(court_num):
     resting = get_resting_players()
     if len(resting) >= 4:
         next_4 = resting[:4]
+        
+        # Calculate ratings for balanced 2v2 pairing
+        r = {p: st.session_state.player_ratings.get(p, 1200) for p in next_4}
+        
+        pairings = [
+            (([next_4[0], next_4[1]], [next_4[2], next_4[3]]), abs((r[next_4[0]] + r[next_4[1]]) - (r[next_4[2]] + r[next_4[3]]))),
+            (([next_4[0], next_4[2]], [next_4[1], next_4[3]]), abs((r[next_4[0]] + r[next_4[2]]) - (r[next_4[1]] + r[next_4[3]]))),
+            (([next_4[0], next_4[3]], [next_4[1], next_4[2]]), abs((r[next_4[0]] + r[next_4[3]]) - (r[next_4[1]] + r[next_4[2]]))),
+        ]
+        
+        best_pairing = min(pairings, key=lambda x: x[1])[0]
+        
         for p in next_4:
             st.session_state.play_counts[p] += 1
-        random.shuffle(next_4)
+            
         st.session_state.courts_state[court_num] = {
-            "team1": [next_4[0], next_4[1]],
-            "team2": [next_4[2], next_4[3]]
+            "team1": best_pairing[0],
+            "team2": best_pairing[1]
         }
     else:
         st.session_state.courts_state[court_num] = None
@@ -231,7 +289,11 @@ if can_edit:
             st.session_state.play_counts = {p: 0 for p in names}
             st.session_state.courts_state = {}
             
+            # Load DB ratings
+            db_ratings = load_player_ratings()
             for p in names:
+                if p not in st.session_state.player_ratings:
+                    st.session_state.player_ratings[p] = db_ratings.get(p, 1200)
                 if p not in st.session_state.league_standings:
                     st.session_state.league_standings[p] = 0
             
@@ -245,33 +307,42 @@ if can_edit:
         
         if st.session_state.active_players:
             resting_players = get_resting_players()
-            st.info(f"⏸️ *Players Resting / Queueing ({len(resting_players)}):* {', '.join(resting_players) if resting_players else 'None'}")
+            formatted_resting = [f"{p} ({get_letter_grade(st.session_state.player_ratings.get(p, 1200))})" for p in resting_players]
+            st.info(f"⏸️ *Players Queueing ({len(resting_players)}):* {', '.join(formatted_resting) if formatted_resting else 'None'}")
             st.write("---")
             
-            st.subheader("2. Active Courts (Independent Scoring)")
+            st.subheader("2. Active Courts (Skill-Balanced Matchmaker)")
             
             for court_num in range(1, num_courts + 1):
                 match = st.session_state.courts_state.get(court_num)
                 st.markdown(f"### Court {court_num}")
                 
                 if match:
+                    t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
+                    t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
+                    
+                    r = st.session_state.player_ratings
+                    t1_g1, t1_g2 = get_letter_grade(r.get(t1_p1, 1200)), get_letter_grade(r.get(t1_p2, 1200))
+                    t2_g1, t2_g2 = get_letter_grade(r.get(t2_p1, 1200)), get_letter_grade(r.get(t2_p2, 1200))
+                    
                     col1, col2, col3, col4 = st.columns([3, 2, 3, 2])
                     
                     with col1:
-                        st.write(f"*Team A:* {match['team1'][0]} & {match['team1'][1]}")
+                        st.write(f"*Team A:* {t1_p1} [{t1_g1}] & {t1_p2} [{t1_g2}]")
                         s1 = st.number_input(f"Team A Score", min_value=0, max_value=30, value=0, key=f"c{court_num}_s1")
                     
                     with col2:
                         st.markdown("<h3 style='text-align: center; margin-top: 20px;'>VS</h3>", unsafe_allow_html=True)
                     
                     with col3:
-                        st.write(f"*Team B:* {match['team2'][0]} & {match['team2'][1]}")
+                        st.write(f"*Team B:* {t2_p1} [{t2_g1}] & {t2_p2} [{t2_g2}]")
                         s2 = st.number_input(f"Team B Score", min_value=0, max_value=30, value=0, key=f"c{court_num}_s2")
                         
                     with col4:
                         st.write("")
                         st.write("")
                         if st.button(f"💾 Finish Court {court_num}", key=f"btn_{court_num}"):
+                            # 1. League points (+2 for win)
                             if s1 > s2:
                                 for p in match["team1"]:
                                     st.session_state.session_scores[p] += 2
@@ -281,8 +352,21 @@ if can_edit:
                                     st.session_state.session_scores[p] += 2
                                     st.session_state.league_standings[p] += 2
                             
+                            # 2. Dynamic Rating Grade Update
+                            t1_avg = (r.get(t1_p1, 1200) + r.get(t1_p2, 1200)) / 2.0
+                            t2_avg = (r.get(t2_p1, 1200) + r.get(t2_p2, 1200)) / 2.0
+                            
+                            d1, d2 = calculate_rating_change(t1_avg, t2_avg, s1, s2)
+                            
+                            for p in match["team1"]:
+                                st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d1)
+                                save_player_rating(p, st.session_state.player_ratings[p])
+                            for p in match["team2"]:
+                                st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
+                                save_player_rating(p, st.session_state.player_ratings[p])
+                            
                             assign_next_match_to_court(court_num)
-                            st.success(f"Court {court_num} score recorded & new match generated!")
+                            st.success(f"Court {court_num} score saved! Grades updated (Team A {d1:+} pts, Team B {d2:+} pts).")
                             st.rerun()
                 else:
                     st.write("No active match on this court.")
@@ -291,7 +375,7 @@ if can_edit:
                         st.rerun()
                 st.write("---")
 
-    # SEASON CONTROLS TAB (STRICTLY ADMIN & MUSA ONLY)
+    # SEASON CONTROLS TAB (STRICTLY ADMIN & MUSA)
     if can_manage_season:
         with tabs[3]:
             st.subheader("⚙️ Session & Season Controls")
@@ -325,10 +409,13 @@ if can_edit:
             with tabs[4]:
                 st.subheader("👥 User Backend & Activity Logs")
                 
-                users_resp = supabase.table("users").select("username, role, created_at").execute()
+                users_resp = supabase.table("users").select("username, role, rating, created_at").execute()
                 logs_resp = supabase.table("login_logs").select("username, login_time").order("id", desc=True).limit(50).execute()
                 
-                df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "created_at"])
+                df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "rating", "created_at"])
+                if not df_users.empty and "rating" in df_users.columns:
+                    df_users["Grade"] = df_users["rating"].apply(lambda x: get_letter_grade(x) if pd.notnull(x) else "B (1200)")
+                
                 df_logs = pd.DataFrame(logs_resp.data) if logs_resp.data else pd.DataFrame(columns=["username", "login_time"])
                 
                 c1, c2 = st.columns(2)
@@ -336,7 +423,7 @@ if can_edit:
                 c2.metric("Total Login Events", len(df_logs))
                 
                 st.write("---")
-                st.markdown("### 📋 Registered Player Accounts")
+                st.markdown("### 📋 Registered Player Accounts & Grades")
                 st.dataframe(df_users, use_container_width=True)
                 
                 st.write("---")
@@ -349,9 +436,14 @@ with tabs[today_idx]:
     st.subheader(f"Today's Session Standings (Session {st.session_state.current_session_num}/12)")
     if st.session_state.session_scores:
         df_today = pd.DataFrame([
-            {"Player": k, "Points": v, "Games Played": st.session_state.play_counts.get(k, 0)}
+            {
+                "Player": k,
+                "Grade": get_letter_grade(st.session_state.player_ratings.get(k, 1200)),
+                "Session Points": v,
+                "Games Played": st.session_state.play_counts.get(k, 0)
+            }
             for k, v in st.session_state.session_scores.items()
-        ]).sort_values(by="Points", ascending=False).reset_index(drop=True)
+        ]).sort_values(by="Session Points", ascending=False).reset_index(drop=True)
         df_today.index += 1
         st.dataframe(df_today, use_container_width=True)
     else:
@@ -363,7 +455,11 @@ with tabs[league_idx]:
     st.subheader(f"🏆 12-Session Overall League (Progress: {st.session_state.current_session_num}/12)")
     if st.session_state.league_standings:
         df_league = pd.DataFrame([
-            {"Player": k, "Total Points": v}
+            {
+                "Player": k,
+                "Grade": get_letter_grade(st.session_state.player_ratings.get(k, 1200)),
+                "Total Points": v
+            }
             for k, v in st.session_state.league_standings.items()
         ]).sort_values(by="Total Points", ascending=False).reset_index(drop=True)
         df_league.index += 1
@@ -371,11 +467,11 @@ with tabs[league_idx]:
         st.markdown("### 🥇 Top 3 Leaderboard")
         cols = st.columns(3)
         if len(df_league) >= 1:
-            cols[0].metric("🥇 1st Place", df_league.iloc[0]["Player"], f"{df_league.iloc[0]['Total Points']} pts")
+            cols[0].metric("🥇 1st Place", f"{df_league.iloc[0]['Player']} [{df_league.iloc[0]['Grade']}]", f"{df_league.iloc[0]['Total Points']} pts")
         if len(df_league) >= 2:
-            cols[1].metric("🥈 2nd Place", df_league.iloc[1]["Player"], f"{df_league.iloc[1]['Total Points']} pts")
+            cols[1].metric("🥈 2nd Place", f"{df_league.iloc[1]['Player']} [{df_league.iloc[1]['Grade']}]", f"{df_league.iloc[1]['Total Points']} pts")
         if len(df_league) >= 3:
-            cols[2].metric("🥉 3rd Place", df_league.iloc[2]["Player"], f"{df_league.iloc[2]['Total Points']} pts")
+            cols[2].metric("🥉 3rd Place", f"{df_league.iloc[2]['Player']} [{df_league.iloc[2]['Grade']}]", f"{df_league.iloc[2]['Total Points']} pts")
             
         st.write("---")
         st.dataframe(df_league, use_container_width=True)
