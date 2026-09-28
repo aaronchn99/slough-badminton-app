@@ -1,10 +1,35 @@
-import streamlit as st
+[22:37, 28/09/2026] Shoj: import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client, Client
+import time
+
+st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
+
+# Custom CSS for compact mobile card layout
+st.markdown("""
+<style>
+    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+    .stButton button { border-radius: 8px; font-weight: bold; }
+    div[data-testid="stVerticalBlock"] > div { margin-bottom: -0.2rem; }
+    .recap-card { background-color: #1E232F; padding: 15px; border-radius: 10px; margin-bottom: 15px; }
+</style>
+""", unsafe_allow_html=True)
+
+# --- SUPABASE DATABASE CONNECTION ---
+@st.cache_resource
+def ini…
+[22:39, 28/09/2026] Shoj: import streamlit as st
+import pandas as pd
+import random
+import urllib.parse
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from supabase import create_client, Client
+import math
 import time
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
@@ -81,8 +106,8 @@ def log_match_to_database(session_num, team1, team2, s1, s2):
             "score_a": s1,
             "score_b": s2
         }).execute()
-    except Exception:
-        pass
+    except Exception as e:
+        st.error(f"Error logging match: {e}")
 
 def fetch_live_courts():
     try:
@@ -328,10 +353,9 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
     t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
     t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
 
-    # Save permanently to database
+    # Save permanently to database log table
     log_match_to_database(st.session_state.current_session_num, match["team1"], match["team2"], s1, s2)
 
-    is_close = abs(s1 - s2) <= 2
     t1_avg = (r.get(t1_p1, 1200) + r.get(t1_p2, 1200)) / 2.0
     t2_avg = (r.get(t2_p1, 1200) + r.get(t2_p2, 1200)) / 2.0
     
@@ -504,8 +528,8 @@ with tab_hub:
                     meetings += 1
                     if p1_in_t1 and s1 > s2: p1_wins += 1
                     elif p1_in_t2 and s2 > s1: p1_wins += 1
-                    elif p2_in_t1 and s1 > s2: p2_wins += 1
-                    elif p2_in_t2 and s2 > s1: p2_wins += 1
+                    elif p2_in_t1 and s1 > s2: p1_wins += 1
+                    elif p2_in_t2 and s2 > s1: p1_wins += 1
                     
             c1, c2, c3 = st.columns(3)
             c1.metric(f"{p1} Wins", p1_wins)
