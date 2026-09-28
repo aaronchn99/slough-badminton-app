@@ -6,12 +6,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client, Client
 import math
-from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
-
-# Real-time cross-device sync polling (Refreshes every 3 seconds)
-st_autorefresh(interval=3000, key="global_court_sync")
 
 # Custom CSS for compact mobile card layout
 st.markdown("""
@@ -350,6 +346,10 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
 # --- MATCHMAKER & SCORING ---
 if can_edit:
     with tabs[0]:
+        # Manual Refresh Button replaces auto-refresh
+        if st.button("🔄 Refresh Live Courts", use_container_width=True):
+            st.rerun()
+            
         live_courts_state = fetch_live_courts()
         
         with st.expander("⚙️ Session Setup (Tap to expand/hide)", expanded=not bool(st.session_state.active_players)):
