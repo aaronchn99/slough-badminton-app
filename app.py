@@ -1,3 +1,4 @@
+import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
@@ -8,38 +9,7 @@ import math
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
-# --- SUPABASE DATABASE CONNECTION ---
-@st.cache_resource
-def init_supabase():
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
-
-try:
-    supabase: Client = init_supabase()
-except Exception as e:
-    st.error("Could not connect to Supabase database. Please verify Streamlit secrets.")
-
-# HARDCODED ADMIN ACCOUNTS
-ADMIN_ACCOUNTS = {
-    "admin": "4dm1n776&",
-    "Musa": "4dmiN786&",
-    "Simon": "4dm1nh3ll0"
-}
-
-# --- C…
-[12:58, 28/09/2026] Shoj: import streamlit as st
-import pandas as pd
-import random
-import urllib.parse
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from supabase import create_client, Client
-import math
-
-st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
-
-# Custom CSS for compact mobile cards
+# Custom CSS for compact mobile card layout
 st.markdown("""
 <style>
     .element-container { margin-bottom: 0.5rem; }
@@ -383,7 +353,6 @@ if can_edit:
             for court_num in range(1, num_courts + 1):
                 match = st.session_state.courts_state.get(court_num)
                 
-                # State keys for score steppers
                 s1_key = f"c{court_num}_score1"
                 s2_key = f"c{court_num}_score2"
                 if s1_key not in st.session_state:
@@ -402,7 +371,6 @@ if can_edit:
                         t1_g1, t1_g2 = get_letter_grade(r.get(t1_p1, 1200)), get_letter_grade(r.get(t1_p2, 1200))
                         t2_g1, t2_g2 = get_letter_grade(r.get(t2_p1, 1200)), get_letter_grade(r.get(t2_p2, 1200))
                         
-                        # MOBILE SIDE-BY-SIDE CARD LAYOUT
                         col1, col_vs, col2 = st.columns([5, 2, 5])
                         
                         with col1:
@@ -441,7 +409,6 @@ if can_edit:
                             s1 = st.session_state[s1_key]
                             s2 = st.session_state[s2_key]
                             
-                            # VALIDATION: At least one team MUST reach 21+ points
                             if s1 < 21 and s2 < 21:
                                 st.error(f"⚠️ Cannot finish Court {court_num}: At least one team must reach at least 21 points!")
                             elif s1 == s2:
@@ -468,7 +435,6 @@ if can_edit:
                                     st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
                                     save_player_rating(p, st.session_state.player_ratings[p])
                                 
-                                # Reset steppers for next match on this court
                                 st.session_state[s1_key] = 0
                                 st.session_state[s2_key] = 0
                                 
