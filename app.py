@@ -4,26 +4,59 @@ import random
 import urllib.parse
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from supabase import create_client, Client
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
-# HARDCODED USER ACCOUNTS (Admin access 24/7)
-USER_DATABASE = {
-    "admin": {"password": "4dm1n776&", "role": "admin"},
-    "Musa": {"password": "4dmiN786&", "role": "admin"},
-    "Simon": {"password": "4dm1nh3ll0", "role": "admin"},
-    "Shoj": {"password": "playerpass123", "role": "player"}
+# --- SUPABASE DATABASE CONNECTION ---
+@st.cache_resource
+def init_supabase():
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+try:
+    supabase: Client = init_supabase()
+except Exception as e:
+    st.error("Could not connect to Supabase database. Please verify Streamlit secrets.")
+
+# HARDCODED ADMIN ACCOUNTS (Always retain full access)
+ADMIN_ACCOUNTS = {
+    "admin": "4dm1n776&",
+    "Musa": "4dmiN786&",
+    "Simon": "4dm1nh3ll0"
 }
 
-# --- TIME-BASED PERMISSION CHECK ---
+# Helper DB Functions
+def get_user_role(username, password):
+    if username in ADMIN_ACCOUNTS and ADMIN_ACCOUNTS[username] == password:
+        return "admin"
+    
+    # Check Supabase users table
+    response = supabase.table("users").select("*").eq("username", username).eq("password", password).execute()
+    if response.data:
+        return response.data[0]["role"]
+    return None
+
+def register_user(username, password):
+    if username in ADMIN_ACCOUNTS:
+        return False, "Username reserved for Admin."
+    
+    response = supabase.table("users").select("username").eq("username", username).execute()
+    if response.data:
+        return False, "Username already exists."
+    
+    supabase.table("users").insert({"username": username, "password": password, "role": "player"}).execute()
+    return True, "Account created successfully!"
+
+def log_login_event(username):
+    now_uk = datetime.now(ZoneInfo("Europe/London")).strftime("%Y-%m-%d %H:%M:%S")
+    supabase.table("login_logs").insert({"username": username, "login_time": now_uk}).execute()
+
 def is_session_active():
     """Returns True ONLY on Mondays between 20:00 (8 PM) and 22:00 (10 PM) UK time."""
     now_uk = datetime.now(ZoneInfo("Europe/London"))
-    
-    is_monday = now_uk.weekday() == 0  # 0 represents Monday
-    is_session_time = 20 <= now_uk.hour < 22  # 20:00 to 21:59
-    
-    return is_monday and is_session_time
+    return now_uk.weekday() == 0 and (20 <= now_uk.hour < 22)
 
 # Session State Setup
 if "logged_in" not in st.session_state:
@@ -47,9 +80,6 @@ if "play_counts" not in st.session_state:
 
 if "courts_state" not in st.session_state:
     st.session_state.courts_state = {}
-
-if "registered_users" not in st.session_state:
-    st.session_state.registered_users = {}
 
 # Clean SVG Badge Vector Graphic
 RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260">
@@ -83,17 +113,12 @@ if not st.session_state.logged_in:
                 submit_button = st.form_submit_button("Log In")
                 
                 if submit_button:
-                    db = st.session_state.registered_users
-                    if username_input in USER_DATABASE and USER_DATABASE[username_input]["password"] == password_input:
+                    role = get_user_role(username_input, password_input)
+                    if role:
                         st.session_state.logged_in = True
                         st.session_state.username = username_input
-                        st.session_state.role = USER_DATABASE[username_input]["role"]
-                        st.success(f"Welcome back, {username_input}!")
-                        st.rerun()
-                    elif username_input in db and db[username_input]["password"] == password_input:
-                        st.session_state.logged_in = True
-                        st.session_state.username = username_input
-                        st.session_state.role = "player"
+                        st.session_state.role = role
+                        log_login_event(username_input)
                         st.success(f"Welcome back, {username_input}!")
                         st.rerun()
                     else:
@@ -108,15 +133,16 @@ if not st.session_state.logged_in:
                 signup_btn = st.form_submit_button("Create Account")
                 
                 if signup_btn:
-                    if new_user in USER_DATABASE or new_user in st.session_state.registered_users:
-                        st.error("Username already taken.")
-                    elif new_pass != confirm_pass:
+                    if new_pass != confirm_pass:
                         st.error("Passwords do not match.")
                     elif not new_user or not new_pass:
                         st.error("Please fill in all fields.")
                     else:
-                        st.session_state.registered_users[new_user] = {"password": new_pass, "role": "player"}
-                        st.success("Account created successfully! You can now log in.")
+                        success, msg = register_user(new_user, new_pass)
+                        if success:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
     st.stop()
 
 # --- DYNAMIC PERMISSION CHECK ---
@@ -148,8 +174,10 @@ with col_title:
     st.subheader(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
 
 # Tabs
-if can_edit:
-    tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management"])
+if st.session_state.role == "admin":
+    tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management", "👥 User Management & Logs"])
+elif can_edit:
+    tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League"])
 else:
     tabs = st.tabs(["📊 Today's Leaderboard", "🏆 12-Session League"])
 
@@ -164,7 +192,6 @@ def get_resting_players():
     resting = [p for p in st.session_state.active_players if p not in currently_playing]
     return sorted(resting, key=lambda p: (st.session_state.play_counts[p], random.random()))
 
-# Helper function to assign next 4 available players to a court
 def assign_next_match_to_court(court_num):
     resting = get_resting_players()
     if len(resting) >= 4:
@@ -179,7 +206,7 @@ def assign_next_match_to_court(court_num):
     else:
         st.session_state.courts_state[court_num] = None
 
-# --- MATCHMAKER & SCORING (ENABLED IF MON 8-10PM OR ADMIN) ---
+# --- MATCHMAKER & SCORING ---
 if can_edit:
     with tabs[0]:
         st.subheader("1. Session Setup")
@@ -256,41 +283,60 @@ if can_edit:
                         st.rerun()
                 st.write("---")
 
-    # SEASON & SESSION CONTROLS TAB
-    with tabs[3]:
-        st.subheader("⚙️ Session & Season Controls")
-        
-        col_a, col_b = st.columns(2)
-        
-        with col_a:
-            st.markdown("### End Current Session")
-            st.write("Locks in today's session scores, clears the active courts, and advances the session counter to the next week.")
-            if st.button("🏁 End Current Session", type="primary"):
-                if st.session_state.current_session_num < 12:
-                    st.session_state.current_session_num += 1
-                st.session_state.courts_state = {}
-                st.session_state.active_players = []
-                st.session_state.session_scores = {}
-                st.session_state.play_counts = {}
-                st.success(f"Session ended! Moved to Session {st.session_state.current_session_num} / 12.")
-                st.rerun()
+    # SEASON CONTROLS TAB (ADMIN ONLY)
+    if st.session_state.role == "admin":
+        with tabs[3]:
+            st.subheader("⚙️ Session & Season Controls")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.markdown("### End Current Session")
+                if st.button("🏁 End Current Session", type="primary"):
+                    if st.session_state.current_session_num < 12:
+                        st.session_state.current_session_num += 1
+                    st.session_state.courts_state = {}
+                    st.session_state.active_players = []
+                    st.session_state.session_scores = {}
+                    st.session_state.play_counts = {}
+                    st.success(f"Session ended! Moved to Session {st.session_state.current_session_num} / 12.")
+                    st.rerun()
 
-        with col_b:
-            st.markdown("### Reset Entire Season")
-            st.write("Resets the session counter back to *Session 1 / 12* and wipes all 12-session overall league standings.")
-            if st.button("🔴 End / Reset Entire Season"):
-                st.session_state.current_session_num = 1
-                st.session_state.league_standings = {}
-                st.session_state.session_scores = {}
-                st.session_state.courts_state = {}
-                st.session_state.active_players = []
-                st.session_state.play_counts = {}
-                st.success("Season reset back to Session 1 / 12!")
-                st.rerun()
+            with col_b:
+                st.markdown("### Reset Entire Season")
+                if st.button("🔴 End / Reset Entire Season"):
+                    st.session_state.current_session_num = 1
+                    st.session_state.league_standings = {}
+                    st.session_state.session_scores = {}
+                    st.session_state.courts_state = {}
+                    st.session_state.active_players = []
+                    st.session_state.play_counts = {}
+                    st.success("Season reset back to Session 1 / 12!")
+                    st.rerun()
+
+        # ADMIN USER MANAGEMENT & AUDIT LOGS TAB
+        with tabs[4]:
+            st.subheader("👥 User Backend & Activity Logs")
+            
+            users_resp = supabase.table("users").select("username, role, created_at").execute()
+            logs_resp = supabase.table("login_logs").select("username, login_time").order("id", desc=True).limit(50).execute()
+            
+            df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "created_at"])
+            df_logs = pd.DataFrame(logs_resp.data) if logs_resp.data else pd.DataFrame(columns=["username", "login_time"])
+            
+            c1, c2 = st.columns(2)
+            c1.metric("Registered Players", len(df_users))
+            c2.metric("Total Login Events", len(df_logs))
+            
+            st.write("---")
+            st.markdown("### 📋 Registered Player Accounts")
+            st.dataframe(df_users, use_container_width=True)
+            
+            st.write("---")
+            st.markdown("### 🕒 Recent Login Audit Trail")
+            st.dataframe(df_logs, use_container_width=True)
 
 # --- TODAY'S LEADERBOARD ---
-today_tab = tabs[1] if can_edit else tabs[0]
-with today_tab:
+today_idx = 1 if can_edit else 0
+with tabs[today_idx]:
     st.subheader(f"Today's Session Standings (Session {st.session_state.current_session_num}/12)")
     if st.session_state.session_scores:
         df_today = pd.DataFrame([
@@ -303,8 +349,8 @@ with today_tab:
         st.info("No games recorded for this session yet.")
 
 # --- 12-SESSION LEAGUE ---
-league_tab = tabs[2] if can_edit else tabs[1]
-with league_tab:
+league_idx = 2 if can_edit else 1
+with tabs[league_idx]:
     st.subheader(f"🏆 12-Session Overall League (Progress: {st.session_state.current_session_num}/12)")
     if st.session_state.league_standings:
         df_league = pd.DataFrame([
