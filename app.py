@@ -6,9 +6,16 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client, Client
 import math
-import itertools
+import extra_streamlit_components as stx
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
+
+# --- COOKIE MANAGER FOR PERSISTENT LOGINS ---
+@st.cache_resource(experimental_allow_widgets=True)
+def get_cookie_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_cookie_manager()
 
 # --- SUPABASE DATABASE CONNECTION ---
 @st.cache_resource
@@ -63,7 +70,7 @@ def calculate_rating_change(team1_avg, team2_avg, score1, score2, k_factor=32):
 def load_player_ratings():
     ratings = {}
     try:
-        resp = supabase.table("users").select("username, rating").execute()
+        resp = supabase.table("users").select("*").execute()
         if resp.data:
             for row in resp.data:
                 ratings[row["username"]] = row.get("rating") if row.get("rating") is not None else 1200
@@ -81,36 +88,52 @@ def save_player_rating(username, new_rating):
 def get_user_role(username, password):
     if username in ADMIN_ACCOUNTS and ADMIN_ACCOUNTS[username] == password:
         return "admin"
-    response = supabase.table("users").select("*").eq("username", username).eq("password", password).execute()
-    if response.data:
-        return response.data[0]["role"]
+    try:
+        response = supabase.table("users").select("*").eq("username", username).eq("password", password).execute()
+        if response.data:
+            return response.data[0]["role"]
+    except Exception:
+        pass
     return None
 
 def register_user(username, password):
     if username in ADMIN_ACCOUNTS:
         return False, "Username reserved for Admin."
-    response = supabase.table("users").select("username").eq("username", username).execute()
-    if response.data:
-        return False, "Username already exists."
-    supabase.table("users").insert({"username": username, "password": password, "role": "player", "rating": 1200}).execute()
-    return True, "Account created successfully!"
+    try:
+        response = supabase.table("users").select("username").eq("username", username).execute()
+        if response.data:
+            return False, "Username already exists."
+        supabase.table("users").insert({"username": username, "password": password, "role": "player", "rating": 1200}).execute()
+        return True, "Account created successfully!"
+    except Exception as e:
+        return False, f"Error creating account: {e}"
 
 def log_login_event(username):
-    now_uk = datetime.now(ZoneInfo("Europe/London")).strftime("%Y-%m-%d %H:%M:%S")
-    supabase.table("login_logs").insert({"username": username, "login_time": now_uk}).execute()
+    try:
+        now_uk = datetime.now(ZoneInfo("Europe/London")).strftime("%Y-%m-%d %H:%M:%S")
+        supabase.table("login_logs").insert({"username": username, "login_time": now_uk}).execute()
+    except Exception:
+        pass
 
 def is_session_active():
     """Returns True ONLY on Mondays between 20:00 (8 PM) and 22:00 (10 PM) UK time."""
     now_uk = datetime.now(ZoneInfo("Europe/London"))
     return now_uk.weekday() == 0 and (20 <= now_uk.hour < 22)
 
-# Session State Setup
+# --- AUTO-RESTORE LOGIN FROM COOKIES ---
+saved_username = cookie_manager.get("badminton_user")
+saved_role = cookie_manager.get("badminton_role")
+
 if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "username" not in st.session_state:
-    st.session_state.username = None
-if "role" not in st.session_state:
-    st.session_state.role = None
+    if saved_username and saved_role:
+        st.session_state.logged_in = True
+        st.session_state.username = saved_username
+        st.session_state.role = saved_role
+        st.session_state.player_ratings = load_player_ratings()
+    else:
+        st.session_state.logged_in = False
+        st.session_state.username = None
+        st.session_state.role = None
 
 if "current_session_num" not in st.session_state:
     st.session_state.current_session_num = 1
@@ -129,7 +152,7 @@ if "player_ratings" not in st.session_state:
 if "courts_state" not in st.session_state:
     st.session_state.courts_state = {}
 
-# SVG Logo Graphic
+# Clean SVG Logo Graphic
 RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260">
     <circle cx="130" cy="130" r="120" fill="#1E4867" stroke="#F9F8F3" stroke-width="6"/>
     <path id="archPath" d="M 35,130 A 95,95 0 1,1 225,130" fill="none" />
@@ -167,6 +190,11 @@ if not st.session_state.logged_in:
                         st.session_state.username = username_input
                         st.session_state.role = role
                         st.session_state.player_ratings = load_player_ratings()
+                        
+                        # Save persistent cookies for 30 days
+                        cookie_manager.set("badminton_user", username_input, key="cookie_user", expires_at=datetime.now().replace(year=datetime.now().year + 1))
+                        cookie_manager.set("badminton_role", role, key="cookie_role", expires_at=datetime.now().replace(year=datetime.now().year + 1))
+                        
                         log_login_event(username_input)
                         st.success(f"Welcome back, {username_input}!")
                         st.rerun()
@@ -210,6 +238,8 @@ else:
     st.sidebar.info("🔒 *Outside Session Hours: Read-Only Mode*")
 
 if st.sidebar.button("Log Out"):
+    cookie_manager.delete("badminton_user", key="delete_user")
+    cookie_manager.delete("badminton_role", key="delete_role")
     st.session_state.logged_in = False
     st.session_state.username = None
     st.session_state.role = None
@@ -409,26 +439,29 @@ if can_edit:
             with tabs[4]:
                 st.subheader("👥 User Backend & Activity Logs")
                 
-                users_resp = supabase.table("users").select("username, role, rating, created_at").execute()
-                logs_resp = supabase.table("login_logs").select("username, login_time").order("id", desc=True).limit(50).execute()
-                
-                df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "rating", "created_at"])
-                if not df_users.empty and "rating" in df_users.columns:
-                    df_users["Grade"] = df_users["rating"].apply(lambda x: get_letter_grade(x) if pd.notnull(x) else "B (1200)")
-                
-                df_logs = pd.DataFrame(logs_resp.data) if logs_resp.data else pd.DataFrame(columns=["username", "login_time"])
-                
-                c1, c2 = st.columns(2)
-                c1.metric("Registered Players", len(df_users))
-                c2.metric("Total Login Events", len(df_logs))
-                
-                st.write("---")
-                st.markdown("### 📋 Registered Player Accounts & Grades")
-                st.dataframe(df_users, use_container_width=True)
-                
-                st.write("---")
-                st.markdown("### 🕒 Recent Login Audit Trail")
-                st.dataframe(df_logs, use_container_width=True)
+                try:
+                    users_resp = supabase.table("users").select("*").execute()
+                    logs_resp = supabase.table("login_logs").select("username, login_time").order("id", desc=True).limit(50).execute()
+                    
+                    df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "rating", "created_at"])
+                    if not df_users.empty:
+                        df_users["Grade"] = df_users.get("rating", 1200).apply(lambda x: get_letter_grade(x) if pd.notnull(x) else "B (1200)")
+                    
+                    df_logs = pd.DataFrame(logs_resp.data) if logs_resp.data else pd.DataFrame(columns=["username", "login_time"])
+                    
+                    c1, c2 = st.columns(2)
+                    c1.metric("Registered Players", len(df_users))
+                    c2.metric("Total Login Events", len(df_logs))
+                    
+                    st.write("---")
+                    st.markdown("### 📋 Registered Player Accounts & Grades")
+                    st.dataframe(df_users, use_container_width=True)
+                    
+                    st.write("---")
+                    st.markdown("### 🕒 Recent Login Audit Trail")
+                    st.dataframe(df_logs, use_container_width=True)
+                except Exception as ex:
+                    st.warning(f"Database query error: {ex}")
 
 # --- TODAY'S LEADERBOARD ---
 today_idx = 1 if can_edit else 0
