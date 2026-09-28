@@ -6,8 +6,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client, Client
 import math
+from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
+
+# --- REAL-TIME CROSS-DEVICE SYNC (Auto-refresh every 3 seconds) ---
+st_autorefresh(interval=3000, key="global_court_sync")
 
 # Custom CSS for compact mobile layout
 st.markdown("""
@@ -36,6 +40,37 @@ ADMIN_ACCOUNTS = {
     "Musa": "4dmiN786&",
     "Simon": "4dm1nh3ll0"
 }
+
+# --- SUPABASE LIVE COURTS CROSS-DEVICE SYNC HELPERS ---
+def fetch_live_courts():
+    """Fetches real-time active court states directly from Supabase DB."""
+    try:
+        resp = supabase.table("live_courts").select("*").execute()
+        courts = {}
+        if resp.data:
+            for row in resp.data:
+                c_id = row["court_id"]
+                if row.get("team_a") and row.get("team_b"):
+                    courts[c_id] = {
+                        "team1": row["team_a"],
+                        "team2": row["team_b"]
+                    }
+                else:
+                    courts[c_id] = None
+        return courts
+    except Exception:
+        return {}
+
+def update_live_court(court_num, team1=None, team2=None):
+    """Updates active court assignments in Supabase so PC and phones stay synced."""
+    try:
+        supabase.table("live_courts").upsert({
+            "court_id": court_num,
+            "team_a": team1,
+            "team_b": team2
+        }).execute()
+    except Exception:
+        pass
 
 # --- CLEAN LETTER-ONLY GRADE SCALE ---
 def get_letter_grade(rating):
@@ -157,9 +192,6 @@ if "play_counts" not in st.session_state:
 if "player_ratings" not in st.session_state:
     st.session_state.player_ratings = {}
 
-if "courts_state" not in st.session_state:
-    st.session_state.courts_state = {}
-
 RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260">
     <circle cx="130" cy="130" r="120" fill="#1E4867" stroke="#F9F8F3" stroke-width="6"/>
     <path id="archPath" d="M 35,130 A 95,95 0 1,1 225,130" fill="none" />
@@ -248,7 +280,6 @@ if st.sidebar.button("Log Out", use_container_width=True):
     st.session_state.logged_in = False
     st.session_state.username = None
     st.session_state.role = None
-    st.session_state.courts_state = {}
     st.rerun()
 
 # Display Header
@@ -270,19 +301,19 @@ else:
     tabs = st.tabs(["📊 Standings", "🏆 League"])
 
 # Helper function to get resting players sorted by least played
-def get_resting_players():
+def get_resting_players(courts_state):
     currently_playing = set()
-    for c, match in st.session_state.courts_state.items():
+    for c, match in courts_state.items():
         if match:
             currently_playing.update(match["team1"])
             currently_playing.update(match["team2"])
             
     resting = [p for p in st.session_state.active_players if p not in currently_playing]
-    return sorted(resting, key=lambda p: (st.session_state.play_counts[p], random.random()))
+    return sorted(resting, key=lambda p: (st.session_state.play_counts.get(p, 0), random.random()))
 
-# Skill-Balanced Matchmaker Function
-def assign_next_match_to_court(court_num):
-    resting = get_resting_players()
+# Skill-Balanced Matchmaker Function with Supabase Persistence
+def assign_next_match_to_court(court_num, courts_state):
+    resting = get_resting_players(courts_state)
     if len(resting) >= 4:
         next_4 = resting[:4]
         
@@ -297,18 +328,20 @@ def assign_next_match_to_court(court_num):
         best_pairing = min(pairings, key=lambda x: x[1])[0]
         
         for p in next_4:
-            st.session_state.play_counts[p] += 1
+            st.session_state.play_counts[p] = st.session_state.play_counts.get(p, 0) + 1
             
-        st.session_state.courts_state[court_num] = {
-            "team1": best_pairing[0],
-            "team2": best_pairing[1]
-        }
+        update_live_court(court_num, best_pairing[0], best_pairing[1])
+        return True
     else:
-        st.session_state.courts_state[court_num] = None
+        update_live_court(court_num, None, None)
+        return False
 
 # --- MATCHMAKER & SCORING ---
 if can_edit:
     with tabs[0]:
+        # Always fetch global court state from database on render
+        live_courts_state = fetch_live_courts()
+        
         with st.expander("⚙️ Session Setup (Tap to expand/hide)", expanded=not bool(st.session_state.active_players)):
             default_names = "Shoj\nAbdul Waheed\nAaron\nFaisal\nNaveed\nAbdulKhader\nRyan\nAbdullah sr\nYousuf\nAamer\nMohsin\nSimon\nJoe S\nHassan\nHabeeb"
             player_text = st.text_area("Enter Player Names Present Tonight (one per line):", value=default_names, height=100)
@@ -320,7 +353,6 @@ if can_edit:
                 st.session_state.active_players = names
                 st.session_state.session_scores = {p: 0 for p in names}
                 st.session_state.play_counts = {p: 0 for p in names}
-                st.session_state.courts_state = {}
                 
                 db_ratings = load_player_ratings()
                 for p in names:
@@ -329,14 +361,20 @@ if can_edit:
                     if p not in st.session_state.league_standings:
                         st.session_state.league_standings[p] = 0
                 
+                # Clear DB courts and assign initial matches
                 for c in range(1, num_courts + 1):
-                    assign_next_match_to_court(c)
+                    update_live_court(c, None, None)
+                
+                temp_courts = {}
+                for c in range(1, num_courts + 1):
+                    assign_next_match_to_court(c, temp_courts)
+                    temp_courts = fetch_live_courts()
                     
                 st.success(f"Session {st.session_state.current_session_num} started! Loaded {len(names)} players across {num_courts} courts.")
                 st.rerun()
 
         if st.session_state.active_players:
-            resting_players = get_resting_players()
+            resting_players = get_resting_players(live_courts_state)
             formatted_resting = [f"{p} [{get_letter_grade(st.session_state.player_ratings.get(p, 1200))}]" for p in resting_players]
             st.info(f"⏸️ *Queue ({len(resting_players)}):* {', '.join(formatted_resting) if formatted_resting else 'None'}")
             
@@ -345,7 +383,7 @@ if can_edit:
             score_pill_options = [i for i in range(0, 31)]
             
             for court_num in range(1, num_courts + 1):
-                match = st.session_state.courts_state.get(court_num)
+                match = live_courts_state.get(court_num)
                 
                 with st.container(border=True):
                     st.markdown(f"#### 🏸 Court {court_num}")
@@ -376,12 +414,12 @@ if can_edit:
                             else:
                                 if s1 > s2:
                                     for p in match["team1"]:
-                                        st.session_state.session_scores[p] += 2
-                                        st.session_state.league_standings[p] += 2
+                                        st.session_state.session_scores[p] = st.session_state.session_scores.get(p, 0) + 2
+                                        st.session_state.league_standings[p] = st.session_state.league_standings.get(p, 0) + 2
                                 elif s2 > s1:
                                     for p in match["team2"]:
-                                        st.session_state.session_scores[p] += 2
-                                        st.session_state.league_standings[p] += 2
+                                        st.session_state.session_scores[p] = st.session_state.session_scores.get(p, 0) + 2
+                                        st.session_state.league_standings[p] = st.session_state.league_standings.get(p, 0) + 2
                                 
                                 t1_avg = (r.get(t1_p1, 1200) + r.get(t1_p2, 1200)) / 2.0
                                 t2_avg = (r.get(t2_p1, 1200) + r.get(t2_p2, 1200)) / 2.0
@@ -395,13 +433,16 @@ if can_edit:
                                     st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
                                     save_player_rating(p, st.session_state.player_ratings[p])
                                 
-                                assign_next_match_to_court(court_num)
+                                # Clear court in Supabase so all devices see it cleared
+                                update_live_court(court_num, None, None)
                                 st.success(f"Court {court_num} score saved!")
                                 st.rerun()
                     else:
-                        st.caption("No active match.")
-                        if st.button(f"⚡ Start Match on Court {court_num}", key=f"start_{court_num}", use_container_width=True):
-                            assign_next_match_to_court(court_num)
+                        st.caption("No active match on this court.")
+                        if st.button(f"⚡ Start Next Match on Court {court_num}", key=f"start_{court_num}", use_container_width=True):
+                            assigned = assign_next_match_to_court(court_num, live_courts_state)
+                            if not assigned:
+                                st.warning("Not enough players in queue (minimum 4 required).")
                             st.rerun()
 
     # SEASON CONTROLS TAB (STRICTLY ADMIN & MUSA)
@@ -411,14 +452,44 @@ if can_edit:
             col_a, col_b = st.columns(2)
             with col_a:
                 st.markdown("### End Current Session")
-                if st.button("🏁 End Current Session", type="primary", use_container_width=True):
+                if st.button("🏁 End All Games & Complete Session", type="primary", use_container_width=True):
+                    current_live = fetch_live_courts()
+                    for c_num, c_match in current_live.items():
+                        if c_match:
+                            s1_val = st.session_state.get(f"c{c_num}_s1_pills", 0)
+                            s2_val = st.session_state.get(f"c{c_num}_s2_pills", 0)
+                            
+                            if (s1_val >= 21 or s2_val >= 21) and s1_val != s2_val:
+                                if s1_val > s2_val:
+                                    for p in c_match["team1"]:
+                                        st.session_state.session_scores[p] = st.session_state.session_scores.get(p, 0) + 2
+                                        st.session_state.league_standings[p] = st.session_state.league_standings.get(p, 0) + 2
+                                else:
+                                    for p in c_match["team2"]:
+                                        st.session_state.session_scores[p] = st.session_state.session_scores.get(p, 0) + 2
+                                        st.session_state.league_standings[p] = st.session_state.league_standings.get(p, 0) + 2
+                                        
+                                r_db = st.session_state.player_ratings
+                                t1_a = (r_db.get(c_match["team1"][0], 1200) + r_db.get(c_match["team1"][1], 1200)) / 2.0
+                                t2_a = (r_db.get(c_match["team2"][0], 1200) + r_db.get(c_match["team2"][1], 1200)) / 2.0
+                                delta1, delta2 = calculate_rating_change(t1_a, t2_a, s1_val, s2_val)
+                                
+                                for p in c_match["team1"]:
+                                    st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + delta1)
+                                    save_player_rating(p, st.session_state.player_ratings[p])
+                                for p in c_match["team2"]:
+                                    st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + delta2)
+                                    save_player_rating(p, st.session_state.player_ratings[p])
+                        
+                        update_live_court(c_num, None, None)
+
                     if st.session_state.current_session_num < 12:
                         st.session_state.current_session_num += 1
-                    st.session_state.courts_state = {}
+                    
                     st.session_state.active_players = []
                     st.session_state.session_scores = {}
                     st.session_state.play_counts = {}
-                    st.success(f"Session ended! Moved to Session {st.session_state.current_session_num} / 12.")
+                    st.success(f"Session finished! Advanced to Session {st.session_state.current_session_num} / 12.")
                     st.rerun()
 
             with col_b:
@@ -427,9 +498,10 @@ if can_edit:
                     st.session_state.current_session_num = 1
                     st.session_state.league_standings = {}
                     st.session_state.session_scores = {}
-                    st.session_state.courts_state = {}
                     st.session_state.active_players = []
                     st.session_state.play_counts = {}
+                    for c in range(1, 7):
+                        update_live_court(c, None, None)
                     st.success("Season reset back to Session 1 / 12!")
                     st.rerun()
 
