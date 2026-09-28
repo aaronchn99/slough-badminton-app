@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import random
 import urllib.parse
+from datetime import datetime
+import pytz
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
@@ -9,8 +11,20 @@ st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸"
 USER_DATABASE = {
     "admin": {"password": "4dm1n776&", "role": "admin"},
     "Musa": {"password": "4dmiN786&", "role": "admin"},
+    "Simon": {"password": "4dm1nh3ll0", "role": "admin"},
     "Shoj": {"password": "playerpass123", "role": "player"}
 }
+
+# --- TIME-BASED PERMISSION CHECK ---
+def is_session_active():
+    """Returns True ONLY on Mondays between 20:00 (8 PM) and 22:00 (10 PM) UK time."""
+    uk_tz = pytz.timezone("Europe/London")
+    now_uk = datetime.now(uk_tz)
+    
+    is_monday = now_uk.weekday() == 0  # 0 represents Monday
+    is_session_time = 20 <= now_uk.hour < 22  # 20:00 to 21:59
+    
+    return is_monday and is_session_time
 
 # Session State Setup
 if "logged_in" not in st.session_state:
@@ -74,8 +88,20 @@ if not st.session_state.logged_in:
                     st.error("Invalid username or password.")
     st.stop()
 
-# --- MAIN APP (AFTER LOG IN) ---
+# --- DYNAMIC PERMISSION CHECK ---
+# Admins always have full access; regular users get edit rights during Monday 8PM - 10PM
+session_live = is_session_active()
+can_edit = session_live or (st.session_state.role == "admin")
+
+# Sidebar Status
 st.sidebar.write(f"Logged in as: *{st.session_state.username}* ({st.session_state.role.capitalize()})")
+if st.session_state.role == "admin":
+    st.sidebar.success("👑 *Admin User: Full Access Active 24/7*")
+elif session_live:
+    st.sidebar.success("🟢 *Session Active (8PM-10PM): Edit Mode Unlocked for All*")
+else:
+    st.sidebar.info("🔒 *Outside Session Hours: Read-Only Mode*")
+
 if st.sidebar.button("Log Out"):
     st.session_state.logged_in = False
     st.session_state.username = None
@@ -83,7 +109,7 @@ if st.sidebar.button("Log Out"):
     st.session_state.courts_state = {}
     st.rerun()
 
-# Display Header Logo & Title
+# Display Header
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
     st.image(SVG_URL, width=180)
@@ -92,7 +118,7 @@ with col_title:
     st.subheader(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
 
 # Tabs
-if st.session_state.role == "admin":
+if can_edit:
     tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management"])
 else:
     tabs = st.tabs(["📊 Today's Leaderboard", "🏆 12-Session League"])
@@ -123,8 +149,8 @@ def assign_next_match_to_court(court_num):
     else:
         st.session_state.courts_state[court_num] = None
 
-# --- ADMIN PANEL ---
-if st.session_state.role == "admin":
+# --- MATCHMAKER & SCORING (ENABLED IF MON 8-10PM OR ADMIN) ---
+if can_edit:
     with tabs[0]:
         st.subheader("1. Session Setup")
         
@@ -233,7 +259,7 @@ if st.session_state.role == "admin":
                 st.rerun()
 
 # --- TODAY'S LEADERBOARD ---
-today_tab = tabs[1] if st.session_state.role == "admin" else tabs[0]
+today_tab = tabs[1] if can_edit else tabs[0]
 with today_tab:
     st.subheader(f"Today's Session Standings (Session {st.session_state.current_session_num}/12)")
     if st.session_state.session_scores:
@@ -247,7 +273,7 @@ with today_tab:
         st.info("No games recorded for this session yet.")
 
 # --- 12-SESSION LEAGUE ---
-league_tab = tabs[2] if st.session_state.role == "admin" else tabs[1]
+league_tab = tabs[2] if can_edit else tabs[1]
 with league_tab:
     st.subheader(f"🏆 12-Session Overall League (Progress: {st.session_state.current_session_num}/12)")
     if st.session_state.league_standings:
