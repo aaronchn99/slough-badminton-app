@@ -41,7 +41,35 @@ ADMIN_ACCOUNTS = {
     "Simon": "4dm1nh3ll0"
 }
 
-# --- SUPABASE LIVE COURTS CROSS-DEVICE SYNC HELPERS ---
+# --- SUPABASE GLOBAL SESSION PERSISTENCE HELPERS ---
+def load_global_session_state():
+    """Loads overall session numbers, player lists, standings, and game counts from Supabase."""
+    try:
+        resp = supabase.table("session_state").select("*").eq("id", 1).execute()
+        if resp.data:
+            row = resp.data[0]
+            st.session_state.current_session_num = row.get("current_session_num", 1)
+            st.session_state.active_players = row.get("active_players", [])
+            st.session_state.session_scores = row.get("session_scores", {})
+            st.session_state.league_standings = row.get("league_standings", {})
+            st.session_state.play_counts = row.get("play_counts", {})
+    except Exception:
+        pass
+
+def save_global_session_state():
+    """Saves session state variables to Supabase so browser refreshes never lose progress."""
+    try:
+        supabase.table("session_state").upsert({
+            "id": 1,
+            "current_session_num": st.session_state.get("current_session_num", 1),
+            "active_players": st.session_state.get("active_players", []),
+            "session_scores": st.session_state.get("session_scores", {}),
+            "league_standings": st.session_state.get("league_standings", {}),
+            "play_counts": st.session_state.get("play_counts", {})
+        }).execute()
+    except Exception:
+        pass
+
 def fetch_live_courts():
     """Fetches real-time active court states directly from Supabase DB."""
     try:
@@ -162,7 +190,7 @@ def is_session_active():
     now_uk = datetime.now(ZoneInfo("Europe/London"))
     return now_uk.weekday() == 0 and (20 <= now_uk.hour < 22)
 
-# --- PERSISTENT LOGIN VIA URL PARAMETERS ---
+# --- PERSISTENT LOGIN VIA URL PARAMETERS & DB STATE LOAD ---
 query_params = st.query_params
 saved_user = query_params.get("user")
 saved_role = query_params.get("role")
@@ -178,19 +206,11 @@ if "logged_in" not in st.session_state or not st.session_state.logged_in:
         st.session_state.username = None
         st.session_state.role = None
 
-if "current_session_num" not in st.session_state:
-    st.session_state.current_session_num = 1
-
-if "active_players" not in st.session_state:
-    st.session_state.active_players = []
-if "session_scores" not in st.session_state:
-    st.session_state.session_scores = {}
-if "league_standings" not in st.session_state:
-    st.session_state.league_standings = {}
-if "play_counts" not in st.session_state:
-    st.session_state.play_counts = {}
+# Initialize and pull persistent session data from Supabase DB on every run
 if "player_ratings" not in st.session_state:
-    st.session_state.player_ratings = {}
+    st.session_state.player_ratings = load_player_ratings()
+
+load_global_session_state()
 
 RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260">
     <circle cx="130" cy="130" r="120" fill="#1E4867" stroke="#F9F8F3" stroke-width="6"/>
@@ -331,6 +351,7 @@ def assign_next_match_to_court(court_num, courts_state):
             st.session_state.play_counts[p] = st.session_state.play_counts.get(p, 0) + 1
             
         update_live_court(court_num, best_pairing[0], best_pairing[1])
+        save_global_session_state()
         return True
     else:
         update_live_court(court_num, None, None)
@@ -368,13 +389,14 @@ def save_court_result(court_num, match, s1, s2):
         st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
         save_player_rating(p, st.session_state.player_ratings[p])
 
-    # DELETE SELECTION KEYS SO RE-EXECUTIONS CANNOT DOUBLE COUNT
+    # Clear pill keys
     if f"c{court_num}_s1_pills" in st.session_state:
         del st.session_state[f"c{court_num}_s1_pills"]
     if f"c{court_num}_s2_pills" in st.session_state:
         del st.session_state[f"c{court_num}_s2_pills"]
 
     update_live_court(court_num, None, None)
+    save_global_session_state()
     return True, f"Court {court_num} score saved!"
 
 # --- MATCHMAKER & SCORING ---
@@ -408,7 +430,8 @@ if can_edit:
                 for c in range(1, num_courts + 1):
                     assign_next_match_to_court(c, temp_courts)
                     temp_courts = fetch_live_courts()
-                    
+                
+                save_global_session_state()
                 st.success(f"Session {st.session_state.current_session_num} started! Loaded {len(names)} players across {num_courts} courts.")
                 st.rerun()
 
@@ -417,22 +440,27 @@ if can_edit:
             formatted_resting = [f"{p} [{get_letter_grade(st.session_state.player_ratings.get(p, 1200))}]" for p in resting_players]
             st.info(f"⏸️ *Queue ({len(resting_players)}):* {', '.join(formatted_resting) if formatted_resting else 'None'}")
             
-            # BULK ACTION: FINISH ALL ACTIVE COURTS AT ONCE
-            if st.button("🏁 Finish All Active Courts Simultaneously", type="secondary", use_container_width=True):
-                finished_count = 0
-                for c_idx in range(1, num_courts + 1):
-                    c_match = live_courts_state.get(c_idx)
-                    if c_match:
-                        s1_val = st.session_state.get(f"c{c_idx}_s1_pills", 0)
-                        s2_val = st.session_state.get(f"c{c_idx}_s2_pills", 0)
-                        success, msg = save_court_result(c_idx, c_match, s1_val, s2_val)
-                        if success:
-                            finished_count += 1
-                        else:
-                            st.warning(msg)
-                if finished_count > 0:
-                    st.success(f"Successfully finished and saved {finished_count} courts simultaneously!")
-                    st.rerun()
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if st.button("💾 Save Everything to Database", type="secondary", use_container_width=True):
+                    save_global_session_state()
+                    st.success("Session state successfully saved to Supabase!")
+            with col_b2:
+                if st.button("🏁 Finish All Active Courts Simultaneously", type="secondary", use_container_width=True):
+                    finished_count = 0
+                    for c_idx in range(1, num_courts + 1):
+                        c_match = live_courts_state.get(c_idx)
+                        if c_match:
+                            s1_val = st.session_state.get(f"c{c_idx}_s1_pills", 0)
+                            s2_val = st.session_state.get(f"c{c_idx}_s2_pills", 0)
+                            success, msg = save_court_result(c_idx, c_match, s1_val, s2_val)
+                            if success:
+                                finished_count += 1
+                            else:
+                                st.warning(msg)
+                    if finished_count > 0:
+                        st.success(f"Successfully finished and saved {finished_count} courts simultaneously!")
+                        st.rerun()
 
             st.subheader("Live Courts")
             score_pill_options = [i for i in range(0, 31)]
@@ -498,6 +526,7 @@ if can_edit:
                     st.session_state.active_players = []
                     st.session_state.session_scores = {}
                     st.session_state.play_counts = {}
+                    save_global_session_state()
                     st.success(f"Session finished! Advanced to Session {st.session_state.current_session_num} / 12.")
                     st.rerun()
 
@@ -511,6 +540,7 @@ if can_edit:
                     st.session_state.play_counts = {}
                     for c in range(1, 7):
                         update_live_court(c, None, None)
+                    save_global_session_state()
                     st.success("Season reset back to Session 1 / 12!")
                     st.rerun()
 
