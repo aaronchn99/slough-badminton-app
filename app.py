@@ -6,7 +6,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from supabase import create_client, Client
 import math
-import uuid
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
@@ -29,21 +28,27 @@ ADMIN_ACCOUNTS = {
     "Simon": "4dm1nh3ll0"
 }
 
-# --- ELO & RATING HELPER FUNCTIONS ---
+# --- CLEAN LETTER-ONLY GRADE SCALE ---
 def get_letter_grade(rating):
     r = round(rating)
-    if r >= 1600:
-        return f"A+ ({r})"
+    if r >= 1500:
+        return "A+"
     elif r >= 1400:
-        return f"A ({r})"
-    elif r >= 1300:
-        return f"B+ ({r})"
-    elif r >= 1150:
-        return f"B ({r})"
-    elif r >= 1050:
-        return f"C+ ({r})"
+        return "A"
+    elif r >= 1325:
+        return "A-"
+    elif r >= 1250:
+        return "B+"
+    elif r >= 1175:
+        return "B"
+    elif r >= 1100:
+        return "B-"
+    elif r >= 1025:
+        return "C+"
+    elif r >= 950:
+        return "C"
     else:
-        return f"C ({r})"
+        return "C-"
 
 def calculate_rating_change(team1_avg, team2_avg, score1, score2, k_factor=32):
     margin = abs(score1 - score2)
@@ -113,12 +118,12 @@ def is_session_active():
     now_uk = datetime.now(ZoneInfo("Europe/London"))
     return now_uk.weekday() == 0 and (20 <= now_uk.hour < 22)
 
-# --- URL QUERY PARAMS FOR PERSISTENT LOGINS ON REFRESH ---
+# --- PERSISTENT LOGIN VIA URL PARAMETERS ---
 query_params = st.query_params
 saved_user = query_params.get("user")
 saved_role = query_params.get("role")
 
-if "logged_in" not in st.session_state:
+if "logged_in" not in st.session_state or not st.session_state.logged_in:
     if saved_user and saved_role:
         st.session_state.logged_in = True
         st.session_state.username = saved_user
@@ -185,7 +190,6 @@ if not st.session_state.logged_in:
                         st.session_state.role = role
                         st.session_state.player_ratings = load_player_ratings()
                         
-                        # Store in URL parameters for persistent state across refreshes
                         st.query_params["user"] = username_input
                         st.query_params["role"] = role
                         
@@ -274,7 +278,6 @@ def assign_next_match_to_court(court_num):
     if len(resting) >= 4:
         next_4 = resting[:4]
         
-        # Calculate ratings for balanced 2v2 pairing
         r = {p: st.session_state.player_ratings.get(p, 1200) for p in next_4}
         
         pairings = [
@@ -312,7 +315,6 @@ if can_edit:
             st.session_state.play_counts = {p: 0 for p in names}
             st.session_state.courts_state = {}
             
-            # Load DB ratings
             db_ratings = load_player_ratings()
             for p in names:
                 if p not in st.session_state.player_ratings:
@@ -365,7 +367,6 @@ if can_edit:
                         st.write("")
                         st.write("")
                         if st.button(f"💾 Finish Court {court_num}", key=f"btn_{court_num}"):
-                            # 1. League points (+2 for win)
                             if s1 > s2:
                                 for p in match["team1"]:
                                     st.session_state.session_scores[p] += 2
@@ -375,7 +376,6 @@ if can_edit:
                                     st.session_state.session_scores[p] += 2
                                     st.session_state.league_standings[p] += 2
                             
-                            # 2. Dynamic Rating Grade Update
                             t1_avg = (r.get(t1_p1, 1200) + r.get(t1_p2, 1200)) / 2.0
                             t2_avg = (r.get(t2_p1, 1200) + r.get(t2_p2, 1200)) / 2.0
                             
@@ -389,7 +389,7 @@ if can_edit:
                                 save_player_rating(p, st.session_state.player_ratings[p])
                             
                             assign_next_match_to_court(court_num)
-                            st.success(f"Court {court_num} score saved! Grades updated (Team A {d1:+} pts, Team B {d2:+} pts).")
+                            st.success(f"Court {court_num} score saved!")
                             st.rerun()
                 else:
                     st.write("No active match on this court.")
@@ -438,7 +438,8 @@ if can_edit:
                     
                     df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "rating", "created_at"])
                     if not df_users.empty:
-                        df_users["Grade"] = df_users.get("rating", 1200).apply(lambda x: get_letter_grade(x) if pd.notnull(x) else "B (1200)")
+                        df_users["Grade"] = df_users.get("rating", 1200).apply(lambda x: get_letter_grade(x) if pd.notnull(x) else "B")
+                        df_users = df_users.drop(columns=["rating"], errors="ignore")
                     
                     df_logs = pd.DataFrame(logs_resp.data) if logs_resp.data else pd.DataFrame(columns=["username", "login_time"])
                     
@@ -448,11 +449,11 @@ if can_edit:
                     
                     st.write("---")
                     st.markdown("### 📋 Registered Player Accounts & Grades")
-                    st.dataframe(df_users, width="stretch")
+                    st.dataframe(df_users)
                     
                     st.write("---")
                     st.markdown("### 🕒 Recent Login Audit Trail")
-                    st.dataframe(df_logs, width="stretch")
+                    st.dataframe(df_logs)
                 except Exception as ex:
                     st.warning(f"Database query error: {ex}")
 
@@ -471,7 +472,7 @@ with tabs[today_idx]:
             for k, v in st.session_state.session_scores.items()
         ]).sort_values(by="Session Points", ascending=False).reset_index(drop=True)
         df_today.index += 1
-        st.dataframe(df_today, width="stretch")
+        st.dataframe(df_today)
     else:
         st.info("No games recorded for this session yet.")
 
@@ -500,6 +501,6 @@ with tabs[league_idx]:
             cols[2].metric("🥉 3rd Place", f"{df_league.iloc[2]['Player']} [{df_league.iloc[2]['Grade']}]", f"{df_league.iloc[2]['Total Points']} pts")
             
         st.write("---")
-        st.dataframe(df_league, width="stretch")
+        st.dataframe(df_league)
     else:
         st.info("No overall standings recorded yet.")
