@@ -185,6 +185,14 @@ if "player_ratings" not in st.session_state:
 if "last_court_time" not in st.session_state:
     st.session_state.last_court_time = {}
 
+# Initialize temporary builder state if not present
+if "roster_builder" not in st.session_state:
+    st.session_state.roster_builder = [
+        "Shoj", "Abdul Waheed", "Aaron", "Faisal", "Naveed", 
+        "AbdulKhader", "Ryan", "Abdullah sr", "Yousuf", "Aamer", 
+        "Mohsin", "Simon", "Joe S", "Hassan", "Habeeb"
+    ]
+
 load_global_session_state()
 
 RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260">
@@ -372,43 +380,74 @@ if tab_courts:
             
         live_courts_state = fetch_live_courts()
         
-        # --- INITIAL SETUP / BATCH LOAD ---
-        with st.expander("⚙️ Initial Session Setup (Load default roster)", expanded=not bool(st.session_state.active_players)):
-            default_names = "Shoj\nAbdul Waheed\nAaron\nFaisal\nNaveed\nAbdulKhader\nRyan\nAbdullah sr\nYousuf\nAamer\nMohsin\nSimon\nJoe S\nHassan\nHabeeb"
-            player_text = st.text_area("Enter Default Player Names (one per line):", value=default_names, height=100)
-            num_courts = st.number_input("Number of Courts Available", min_value=1, max_value=6, value=3)
-            
-            if st.button("✅ Start Session with Roster", use_container_width=True):
-                names = [p.strip() for p in player_text.split("\n") if p.strip()]
-                st.session_state.active_players = names
-                st.session_state.session_scores = {p: 0 for p in names}
-                st.session_state.play_counts = {p: 0 for p in names}
-                st.session_state.last_court_time = {p: 0 for p in names}
+        # --- PRE-SESSION ROSTER BUILDER ---
+        if not st.session_state.active_players:
+            with st.container(border=True):
+                st.subheader("👥 Tonight's Player Roster Builder")
+                st.caption("Add or remove players below, then tap 'Start Session' when ready.")
                 
-                db_ratings = load_player_ratings()
-                for p in names:
-                    if p not in st.session_state.player_ratings:
-                        st.session_state.player_ratings[p] = db_ratings.get(p, 1200)
-                    if p not in st.session_state.league_standings:
-                        st.session_state.league_standings[p] = 0
-                for c in range(1, num_courts + 1):
-                    update_live_court(c, None, None)
-                temp_courts = {}
-                for c in range(1, num_courts + 1):
-                    assign_next_match_to_court(c, temp_courts)
-                    temp_courts = fetch_live_courts()
-                save_global_session_state()
-                st.success(f"Session {st.session_state.current_session_num} started with {len(names)} players.")
-                st.rerun()
+                # Quick add row
+                col_add_input, col_add_btn = st.columns([3, 1])
+                with col_add_input:
+                    new_roster_name = st.text_input("Player Name", placeholder="Type name here...", label_visibility="collapsed", key="quick_add_roster")
+                with col_add_btn:
+                    if st.button("➕ Add", use_container_width=True):
+                        if new_roster_name.strip():
+                            clean_name = new_roster_name.strip()
+                            if clean_name not in st.session_state.roster_builder:
+                                st.session_state.roster_builder.append(clean_name)
+                                st.rerun()
+                        else:
+                            st.warning("Enter a name.")
+                
+                st.write("---")
+                st.markdown("**Current Roster List:**")
+                
+                # Render chips/rows for easy removal
+                for idx, player in enumerate(list(st.session_state.roster_builder)):
+                    c_name, c_del = st.columns([4, 1])
+                    c_name.markdown(f"• {player}")
+                    if c_del.button("❌", key=f"del_roster_{idx}"):
+                        st.session_state.roster_builder.remove(player)
+                        st.rerun()
+                
+                st.write("---")
+                num_courts = st.number_input("Number of Courts Available", min_value=1, max_value=6, value=3, key="num_courts_setup")
+                
+                if st.button("🚀 Start Session with This Roster", type="primary", use_container_width=True):
+                    if len(st.session_state.roster_builder) < 4:
+                        st.error("You need at least 4 players to start a session.")
+                    else:
+                        names = list(st.session_state.roster_builder)
+                        st.session_state.active_players = names
+                        st.session_state.session_scores = {p: 0 for p in names}
+                        st.session_state.play_counts = {p: 0 for p in names}
+                        st.session_state.last_court_time = {p: 0 for p in names}
+                        
+                        db_ratings = load_player_ratings()
+                        for p in names:
+                            if p not in st.session_state.player_ratings:
+                                st.session_state.player_ratings[p] = db_ratings.get(p, 1200)
+                            if p not in st.session_state.league_standings:
+                                st.session_state.league_standings[p] = 0
+                        for c in range(1, num_courts + 1):
+                            update_live_court(c, None, None)
+                        temp_courts = {}
+                        for c in range(1, num_courts + 1):
+                            assign_next_match_to_court(c, temp_courts)
+                            temp_courts = fetch_live_courts()
+                        save_global_session_state()
+                        st.success(f"Session {st.session_state.current_session_num} started successfully!")
+                        st.rerun()
 
+        # --- MID-GAME ACTIVE SESSION VIEW ---
         if st.session_state.active_players:
-            # --- INTUITIVE MID-GAME PLAYER ATTENDANCE MANAGER ---
             with st.expander("👥 Manage Attendance (Add Late Arrivals / Remove Early Leavers)", expanded=False):
                 col_add1, col_add2 = st.columns([3, 1])
                 with col_add1:
-                    new_player_name = st.text_input("Add New / Late Player", placeholder="Enter player name...", label_visibility="collapsed").strip()
+                    new_player_name = st.text_input("Late Arrival Name", placeholder="Enter player name...", label_visibility="collapsed", key="midgame_add").strip()
                 with col_add2:
-                    if st.button("➕ Add Player", use_container_width=True):
+                    if st.button("➕ Add", use_container_width=True):
                         if new_player_name:
                             if new_player_name not in st.session_state.active_players:
                                 st.session_state.active_players.append(new_player_name)
@@ -418,24 +457,23 @@ if tab_courts:
                                 st.session_state.player_ratings.setdefault(new_player_name, 1200)
                                 st.session_state.league_standings.setdefault(new_player_name, 0)
                                 save_global_session_state()
-                                st.success(f"Added {new_player_name} to tonight's session!")
+                                st.success(f"Added {new_player_name}!")
                                 st.rerun()
                             else:
-                                st.warning("Player is already in the active list.")
+                                st.warning("Already active.")
                         else:
-                            st.error("Please enter a valid name.")
+                            st.error("Enter a valid name.")
 
                 st.write("---")
                 st.caption("Active Players Tonight (Tap ❌ to remove early leavers):")
                 
-                # Display players in clean rows with delete buttons
                 for p in list(st.session_state.active_players):
                     col_pname, col_pdel = st.columns([4, 1])
                     col_pname.write(f"• **{p}** ({st.session_state.play_counts.get(p, 0)} games played)")
-                    if col_pdel.button("❌ Remove", key=f"remove_{p}"):
+                    if col_pdel.button("❌", key=f"remove_{p}"):
                         st.session_state.active_players.remove(p)
                         save_global_session_state()
-                        st.success(f"Removed {p} from active rotation.")
+                        st.success(f"Removed {p}.")
                         st.rerun()
 
             resting_players = get_resting_players(live_courts_state)
@@ -448,8 +486,9 @@ if tab_courts:
 
             st.subheader("Live Courts")
             score_pill_options = [i for i in range(0, 31)]
-            
-            for court_num in range(1, num_courts + 1):
+            num_courts = 3 # Default courts display if active
+
+            for court_num in range(1, 4):
                 match = live_courts_state.get(court_num)
                 msg = st.session_state.pop(f"msg_{court_num}", None)
                 if msg:
