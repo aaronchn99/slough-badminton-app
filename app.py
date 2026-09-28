@@ -279,7 +279,6 @@ def get_resting_players(courts_state):
             currently_playing.update(match["team2"])
     
     resting = [p for p in st.session_state.active_players if p not in currently_playing]
-    # STRICT PURE FIFO: Sort purely by least games played, then oldest wait time
     return sorted(resting, key=lambda p: (
         st.session_state.play_counts.get(p, 0), 
         st.session_state.last_court_time.get(p, 0)
@@ -288,10 +287,7 @@ def get_resting_players(courts_state):
 def assign_next_match_to_court(court_num, courts_state):
     resting = get_resting_players(courts_state)
     if len(resting) >= 4:
-        # PURE ROTATION: Take the exact top 4 longest-waiting players without rating interference
         next_4 = resting[:4]
-        
-        # Split them evenly into pairs [p1, p2] vs [p3, p4]
         team1 = [next_4[0], next_4[1]]
         team2 = [next_4[2], next_4[3]]
         
@@ -341,7 +337,6 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
 
     is_close = abs(s1 - s2) <= 2
     
-    # Calculate rating changes quietly behind the scenes for profile stats
     t1_avg = (r.get(t1_p1, 1200) + r.get(t1_p2, 1200)) / 2.0
     t2_avg = (r.get(t2_p1, 1200) + r.get(t2_p2, 1200)) / 2.0
     
@@ -361,7 +356,6 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
             rs.setdefault("player_wins", {})[p] = rs.get("player_wins", {}).get(p, 0) + 1
         rs.setdefault("total_points", {})[p] = rs.get("total_points", {}).get(p, 0) + s1 + s2
         if is_close: rs.setdefault("close_matches", {})[p] = rs.get("close_matches", {}).get(p, 0) + 1
-        rs.setdefault("rating_gains", {})[p] = rs.get("rating_gains", {}).get(p, 0) + d1
         
         st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d1)
         save_player_rating(p, st.session_state.player_ratings[p])
@@ -373,7 +367,6 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
             rs.setdefault("player_wins", {})[p] = rs.get("player_wins", {}).get(p, 0) + 1
         rs.setdefault("total_points", {})[p] = rs.get("total_points", {}).get(p, 0) + s1 + s2
         if is_close: rs.setdefault("close_matches", {})[p] = rs.get("close_matches", {}).get(p, 0) + 1
-        rs.setdefault("rating_gains", {})[p] = rs.get("rating_gains", {}).get(p, 0) + d2
         
         st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
         save_player_rating(p, st.session_state.player_ratings[p])
@@ -486,17 +479,16 @@ with tab_standings:
 with tab_hub:
     st.header("🔥 Club Hub & Rivalries")
     
-    active_pool = st.session_state.get("active_players", [])
-    if not active_pool:
-        active_pool = sorted(list(st.session_state.player_ratings.keys()))
+    # Strictly pull names from the active players entered on the courts tab
+    active_pool = sorted(st.session_state.get("active_players", []))
     
     if len(active_pool) >= 2:
         st.subheader("⚔️ Head-to-Head Rivalry Lookup")
         col_p1, col_p2 = st.columns(2)
         with col_p1:
-            p1 = st.selectbox("Select Player 1", active_pool, index=0)
+            p1 = st.selectbox("Select Player 1", active_pool, index=0, key="hub_p1")
         with col_p2:
-            p2 = st.selectbox("Select Player 2", active_pool, index=1 if len(active_pool) > 1 else 0)
+            p2 = st.selectbox("Select Player 2", active_pool, index=1 if len(active_pool) > 1 else 0, key="hub_p2")
             
         if p1 == p2:
             st.warning("Please select two different players to view their rivalry stats.")
@@ -534,7 +526,7 @@ with tab_hub:
         
         st.write("---")
         st.subheader("⚡ Player Form Barometer")
-        selected_player = st.selectbox("Inspect Player Recent Form", active_pool, key="form_player")
+        selected_player = st.selectbox("Inspect Player Recent Form", active_pool, key="form_player_active")
         
         player_matches = []
         for m in history:
@@ -549,7 +541,7 @@ with tab_hub:
         else:
             st.info(f"No match history recorded for {selected_player} yet.")
     else:
-        st.info("Start a session in the Courts tab to load player names for the Hub.")
+        st.info("Start a session in the Courts tab to load player names into the Hub.")
 
 # --- RECAP ---
 with tab_recap:
@@ -641,7 +633,7 @@ if tab_season:
                 st.session_state.current_session_num = 1
                 st.session_state.league_standings = {}
                 st.session_state.session_scores = {}
-                st.session_state.active_players = []
+                st.session_state.active_players = {}
                 st.session_state.play_counts = {}
                 st.session_state.recap_stats = {}
                 st.session_state.match_history = []
