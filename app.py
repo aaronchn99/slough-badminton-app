@@ -246,20 +246,20 @@ if st.sidebar.button("Log Out"):
 # Display Header
 col_logo, col_title = st.columns([1, 4])
 with col_logo:
-    st.image(SVG_URL, width=180)
+    st.image(SVG_URL, width=140)
 with col_title:
-    st.title("Slough Badminton Club (Monday)")
-    st.subheader(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
+    st.title("Slough Badminton Club")
+    st.caption(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
 
 # Tabs Configuration
 if is_master_admin:
-    tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management", "👥 User Management & Logs"])
+    tabs = st.tabs(["🎾 Live Courts", "📊 Today's Standings", "🏆 12-Session League", "⚙️ Season", "👥 Users & Logs"])
 elif can_manage_season:
-    tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management"])
+    tabs = st.tabs(["🎾 Live Courts", "📊 Today's Standings", "🏆 12-Session League", "⚙️ Season"])
 elif can_edit:
-    tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League"])
+    tabs = st.tabs(["🎾 Live Courts", "📊 Today's Standings", "🏆 12-Session League"])
 else:
-    tabs = st.tabs(["📊 Today's Leaderboard", "🏆 12-Session League"])
+    tabs = st.tabs(["📊 Today's Standings", "🏆 12-Session League"])
 
 # Helper function to get resting players sorted by least played
 def get_resting_players():
@@ -301,72 +301,73 @@ def assign_next_match_to_court(court_num):
 # --- MATCHMAKER & SCORING ---
 if can_edit:
     with tabs[0]:
-        st.subheader("1. Session Setup")
-        
-        default_names = "Shoj\nAbdul Waheed\nAaron\nFaisal\nNaveed\nAbdulKhader\nRyan\nAbdullah sr\nYousuf\nAamer\nMohsin\nSimon\nJoe S\nHassan\nHabeeb"
-        player_text = st.text_area("Enter Player Names Present Tonight (one per line):", value=default_names, height=150)
-        
-        num_courts = st.number_input("Number of Courts Available", min_value=1, max_value=6, value=3)
-        
-        if st.button("✅ Start Session / Populate Courts"):
-            names = [p.strip() for p in player_text.split("\n") if p.strip()]
-            st.session_state.active_players = names
-            st.session_state.session_scores = {p: 0 for p in names}
-            st.session_state.play_counts = {p: 0 for p in names}
-            st.session_state.courts_state = {}
+        with st.expander("⚙️ Session Setup (Tap to expand/hide)", expanded=not bool(st.session_state.active_players)):
+            default_names = "Shoj\nAbdul Waheed\nAaron\nFaisal\nNaveed\nAbdulKhader\nRyan\nAbdullah sr\nYousuf\nAamer\nMohsin\nSimon\nJoe S\nHassan\nHabeeb"
+            player_text = st.text_area("Enter Player Names Present Tonight (one per line):", value=default_names, height=120)
             
-            db_ratings = load_player_ratings()
-            for p in names:
-                if p not in st.session_state.player_ratings:
-                    st.session_state.player_ratings[p] = db_ratings.get(p, 1200)
-                if p not in st.session_state.league_standings:
-                    st.session_state.league_standings[p] = 0
+            num_courts = st.number_input("Number of Courts Available", min_value=1, max_value=6, value=3)
             
-            for c in range(1, num_courts + 1):
-                assign_next_match_to_court(c)
+            if st.button("✅ Start Session / Populate Courts", use_container_width=True):
+                names = [p.strip() for p in player_text.split("\n") if p.strip()]
+                st.session_state.active_players = names
+                st.session_state.session_scores = {p: 0 for p in names}
+                st.session_state.play_counts = {p: 0 for p in names}
+                st.session_state.courts_state = {}
                 
-            st.success(f"Session {st.session_state.current_session_num} started! Loaded {len(names)} players across {num_courts} courts.")
-            st.rerun()
+                db_ratings = load_player_ratings()
+                for p in names:
+                    if p not in st.session_state.player_ratings:
+                        st.session_state.player_ratings[p] = db_ratings.get(p, 1200)
+                    if p not in st.session_state.league_standings:
+                        st.session_state.league_standings[p] = 0
+                
+                for c in range(1, num_courts + 1):
+                    assign_next_match_to_court(c)
+                    
+                st.success(f"Session {st.session_state.current_session_num} started! Loaded {len(names)} players across {num_courts} courts.")
+                st.rerun()
 
-        st.write("---")
-        
         if st.session_state.active_players:
             resting_players = get_resting_players()
-            formatted_resting = [f"{p} ({get_letter_grade(st.session_state.player_ratings.get(p, 1200))})" for p in resting_players]
-            st.info(f"⏸️ *Players Queueing ({len(resting_players)}):* {', '.join(formatted_resting) if formatted_resting else 'None'}")
-            st.write("---")
+            formatted_resting = [f"{p} [{get_letter_grade(st.session_state.player_ratings.get(p, 1200))}]" for p in resting_players]
+            st.info(f"⏸️ *Queue ({len(resting_players)}):* {', '.join(formatted_resting) if formatted_resting else 'None'}")
             
-            st.subheader("2. Active Courts (Skill-Balanced Matchmaker)")
+            st.subheader("2. Live Courts")
             
             for court_num in range(1, num_courts + 1):
                 match = st.session_state.courts_state.get(court_num)
-                st.markdown(f"### Court {court_num}")
                 
-                if match:
-                    t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
-                    t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
+                with st.container(border=True):
+                    st.markdown(f"#### 🏸 Court {court_num}")
                     
-                    r = st.session_state.player_ratings
-                    t1_g1, t1_g2 = get_letter_grade(r.get(t1_p1, 1200)), get_letter_grade(r.get(t1_p2, 1200))
-                    t2_g1, t2_g2 = get_letter_grade(r.get(t2_p1, 1200)), get_letter_grade(r.get(t2_p2, 1200))
-                    
-                    col1, col2, col3, col4 = st.columns([3, 2, 3, 2])
-                    
-                    with col1:
-                        st.write(f"*Team A:* {t1_p1} [{t1_g1}] & {t1_p2} [{t1_g2}]")
-                        s1 = st.number_input(f"Team A Score", min_value=0, max_value=30, value=0, key=f"c{court_num}_s1")
-                    
-                    with col2:
-                        st.markdown("<h3 style='text-align: center; margin-top: 20px;'>VS</h3>", unsafe_allow_html=True)
-                    
-                    with col3:
-                        st.write(f"*Team B:* {t2_p1} [{t2_g1}] & {t2_p2} [{t2_g2}]")
-                        s2 = st.number_input(f"Team B Score", min_value=0, max_value=30, value=0, key=f"c{court_num}_s2")
+                    if match:
+                        t1_p1, t1_p2 = match['team1'][0], match['team1'][1]
+                        t2_p1, t2_p2 = match['team2'][0], match['team2'][1]
                         
-                    with col4:
+                        r = st.session_state.player_ratings
+                        t1_g1, t1_g2 = get_letter_grade(r.get(t1_p1, 1200)), get_letter_grade(r.get(t1_p2, 1200))
+                        t2_g1, t2_g2 = get_letter_grade(r.get(t2_p1, 1200)), get_letter_grade(r.get(t2_p2, 1200))
+                        
+                        # MOBILE-FRIENDLY COMPACT COLUMNS
+                        col1, col_vs, col2 = st.columns([5, 2, 5])
+                        
+                        with col1:
+                            st.caption("🔵 *Team A*")
+                            st.write(f"*{t1_p1}* [{t1_g1}]")
+                            st.write(f"*{t1_p2}* [{t1_g2}]")
+                            s1 = st.number_input("Score A", min_value=0, max_value=30, value=0, key=f"c{court_num}_s1", label_visibility="collapsed")
+                        
+                        with col_vs:
+                            st.markdown("<h4 style='text-align: center; margin-top: 35px;'>VS</h4>", unsafe_allow_html=True)
+                        
+                        with col2:
+                            st.caption("🔴 *Team B*")
+                            st.write(f"*{t2_p1}* [{t2_g1}]")
+                            st.write(f"*{t2_p2}* [{t2_g2}]")
+                            s2 = st.number_input("Score B", min_value=0, max_value=30, value=0, key=f"c{court_num}_s2", label_visibility="collapsed")
+                            
                         st.write("")
-                        st.write("")
-                        if st.button(f"💾 Finish Court {court_num}", key=f"btn_{court_num}"):
+                        if st.button(f"💾 Save & Finish Court {court_num}", key=f"btn_{court_num}", type="primary", use_container_width=True):
                             if s1 > s2:
                                 for p in match["team1"]:
                                     st.session_state.session_scores[p] += 2
@@ -391,12 +392,11 @@ if can_edit:
                             assign_next_match_to_court(court_num)
                             st.success(f"Court {court_num} score saved!")
                             st.rerun()
-                else:
-                    st.write("No active match on this court.")
-                    if st.button(f"⚡ Start Match on Court {court_num}", key=f"start_{court_num}"):
-                        assign_next_match_to_court(court_num)
-                        st.rerun()
-                st.write("---")
+                    else:
+                        st.caption("No active match.")
+                        if st.button(f"⚡ Start Match on Court {court_num}", key=f"start_{court_num}", use_container_width=True):
+                            assign_next_match_to_court(court_num)
+                            st.rerun()
 
     # SEASON CONTROLS TAB (STRICTLY ADMIN & MUSA)
     if can_manage_season:
@@ -405,7 +405,7 @@ if can_edit:
             col_a, col_b = st.columns(2)
             with col_a:
                 st.markdown("### End Current Session")
-                if st.button("🏁 End Current Session", type="primary"):
+                if st.button("🏁 End Current Session", type="primary", use_container_width=True):
                     if st.session_state.current_session_num < 12:
                         st.session_state.current_session_num += 1
                     st.session_state.courts_state = {}
@@ -417,7 +417,7 @@ if can_edit:
 
             with col_b:
                 st.markdown("### Reset Entire Season")
-                if st.button("🔴 End / Reset Entire Season"):
+                if st.button("🔴 End / Reset Entire Season", use_container_width=True):
                     st.session_state.current_session_num = 1
                     st.session_state.league_standings = {}
                     st.session_state.session_scores = {}
