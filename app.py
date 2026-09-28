@@ -10,7 +10,7 @@ from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
-# Real-time cross-device sync polling
+# Real-time cross-device sync polling (Refreshes every 3 seconds)
 st_autorefresh(interval=3000, key="global_court_sync")
 
 # Custom CSS for compact mobile card layout
@@ -336,7 +336,7 @@ def assign_next_match_to_court(court_num, courts_state):
         update_live_court(court_num, None, None)
         return False
 
-# Function to save a court match result
+# Function to save a court match result and prevent double execution
 def save_court_result(court_num, match, s1, s2):
     if s1 < 21 and s2 < 21:
         return False, f"⚠️ Court {court_num}: At least one team must reach 21 points!"
@@ -367,6 +367,12 @@ def save_court_result(court_num, match, s1, s2):
     for p in match["team2"]:
         st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
         save_player_rating(p, st.session_state.player_ratings[p])
+
+    # DELETE SELECTION KEYS SO RE-EXECUTIONS CANNOT DOUBLE COUNT
+    if f"c{court_num}_s1_pills" in st.session_state:
+        del st.session_state[f"c{court_num}_s1_pills"]
+    if f"c{court_num}_s2_pills" in st.session_state:
+        del st.session_state[f"c{court_num}_s2_pills"]
 
     update_live_court(court_num, None, None)
     return True, f"Court {court_num} score saved!"
