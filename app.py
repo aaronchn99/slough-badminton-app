@@ -342,15 +342,10 @@ if can_edit:
             
             st.subheader("Live Courts")
             
+            score_pill_options = [i for i in range(0, 31)]
+            
             for court_num in range(1, num_courts + 1):
                 match = st.session_state.courts_state.get(court_num)
-                
-                s1_key = f"c{court_num}_s1_val"
-                s2_key = f"c{court_num}_s2_val"
-                if s1_key not in st.session_state:
-                    st.session_state[s1_key] = 0
-                if s2_key not in st.session_state:
-                    st.session_state[s2_key] = 0
                 
                 with st.container(border=True):
                     st.markdown(f"#### 🏸 Court {court_num}")
@@ -363,45 +358,16 @@ if can_edit:
                         t1_g1, t1_g2 = get_letter_grade(r.get(t1_p1, 1200)), get_letter_grade(r.get(t1_p2, 1200))
                         t2_g1, t2_g2 = get_letter_grade(r.get(t2_p1, 1200)), get_letter_grade(r.get(t2_p2, 1200))
                         
-                        col_t1, col_vs, col_t2 = st.columns([5, 2, 5])
+                        st.caption("🔵 *Team A*")
+                        st.write(f"• *{t1_p1}* [{t1_g1}] & *{t1_p2}* [{t1_g2}]")
+                        s1 = st.pills("Select Team A Score", options=score_pill_options, default=0, key=f"c{court_num}_s1_pills", label_visibility="collapsed")
                         
-                        with col_t1:
-                            st.caption("🔵 *Team A*")
-                            st.write(f"• {t1_p1} [{t1_g1}]")
-                            st.write(f"• {t1_p2} [{t1_g2}]")
-                            st.markdown(f"### Score: *{st.session_state[s1_key]}*")
-                            
-                            with st.popover("Set Team A Score"):
-                                st.write("Tap Score:")
-                                cols = st.columns(4)
-                                scores_to_show = [0, 10, 15, 18, 19, 20, 21, 22, 23, 24, 25, 30]
-                                for idx, val in enumerate(scores_to_show):
-                                    if cols[idx % 4].button(f"{val}", key=f"c{court_num}t1_btn{val}"):
-                                        st.session_state[s1_key] = val
-                                        st.rerun()
-                            
-                        with col_vs:
-                            st.markdown("<h4 style='text-align: center; margin-top: 25px;'>VS</h4>", unsafe_allow_html=True)
-                            
-                        with col_t2:
-                            st.caption("🔴 *Team B*")
-                            st.write(f"• {t2_p1} [{t2_g1}]")
-                            st.write(f"• {t2_p2} [{t2_g2}]")
-                            st.markdown(f"### Score: *{st.session_state[s2_key]}*")
-                            
-                            with st.popover("Set Team B Score"):
-                                st.write("Tap Score:")
-                                cols = st.columns(4)
-                                scores_to_show = [0, 10, 15, 18, 19, 20, 21, 22, 23, 24, 25, 30]
-                                for idx, val in enumerate(scores_to_show):
-                                    if cols[idx % 4].button(f"{val}", key=f"c{court_num}t2_btn{val}"):
-                                        st.session_state[s2_key] = val
-                                        st.rerun()
-                            
+                        st.write("---")
+                        st.caption("🔴 *Team B*")
+                        st.write(f"• *{t2_p1}* [{t2_g1}] & *{t2_p2}* [{t2_g2}]")
+                        s2 = st.pills("Select Team B Score", options=score_pill_options, default=0, key=f"c{court_num}_s2_pills", label_visibility="collapsed")
+                        
                         st.write("")
-                        s1 = st.session_state[s1_key]
-                        s2 = st.session_state[s2_key]
-                        
                         if st.button(f"💾 Save & Finish Court {court_num}", key=f"btn_{court_num}", type="primary", use_container_width=True):
                             if s1 < 21 and s2 < 21:
                                 st.error(f"⚠️ Cannot finish Court {court_num}: At least one team must reach at least 21 points!")
@@ -428,9 +394,6 @@ if can_edit:
                                 for p in match["team2"]:
                                     st.session_state.player_ratings[p] = max(800, st.session_state.player_ratings.get(p, 1200) + d2)
                                     save_player_rating(p, st.session_state.player_ratings[p])
-                                
-                                st.session_state[s1_key] = 0
-                                st.session_state[s2_key] = 0
                                 
                                 assign_next_match_to_court(court_num)
                                 st.success(f"Court {court_num} score saved!")
