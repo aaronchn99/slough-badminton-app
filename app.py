@@ -20,7 +20,7 @@ try:
 except Exception as e:
     st.error("Could not connect to Supabase database. Please verify Streamlit secrets.")
 
-# HARDCODED ADMIN ACCOUNTS (Always retain full access)
+# HARDCODED ADMIN ACCOUNTS (Retain full access to court & match management 24/7)
 ADMIN_ACCOUNTS = {
     "admin": "4dm1n776&",
     "Musa": "4dmiN786&",
@@ -148,6 +148,7 @@ if not st.session_state.logged_in:
 # --- DYNAMIC PERMISSION CHECK ---
 session_live = is_session_active()
 can_edit = session_live or (st.session_state.role == "admin")
+is_master_admin = (st.session_state.username == "admin")
 
 # Sidebar Status
 st.sidebar.write(f"Logged in as: *{st.session_state.username}* ({st.session_state.role.capitalize()})")
@@ -173,12 +174,18 @@ with col_title:
     st.title("Slough Badminton Club (Monday)")
     st.subheader(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
 
-# Tabs
-if st.session_state.role == "admin":
+# Tabs Configuration
+if is_master_admin:
+    # 5 tabs ONLY for 'admin' user
     tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management", "👥 User Management & Logs"])
+elif st.session_state.role == "admin":
+    # 4 tabs for Musa and Simon (No User Management & Logs)
+    tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League", "⚙️ Season Management"])
 elif can_edit:
+    # 3 tabs for standard players on Monday 8-10PM
     tabs = st.tabs(["🎾 Live Courts & Matchmaker", "📊 Today's Leaderboard", "🏆 12-Session League"])
 else:
+    # 2 tabs outside session hours
     tabs = st.tabs(["📊 Today's Leaderboard", "🏆 12-Session League"])
 
 # Helper function to get available resting players
@@ -283,7 +290,7 @@ if can_edit:
                         st.rerun()
                 st.write("---")
 
-    # SEASON CONTROLS TAB (ADMIN ONLY)
+    # SEASON CONTROLS TAB (ADMINS ONLY)
     if st.session_state.role == "admin":
         with tabs[3]:
             st.subheader("⚙️ Session & Season Controls")
@@ -312,27 +319,28 @@ if can_edit:
                     st.success("Season reset back to Session 1 / 12!")
                     st.rerun()
 
-        # ADMIN USER MANAGEMENT & AUDIT LOGS TAB
-        with tabs[4]:
-            st.subheader("👥 User Backend & Activity Logs")
-            
-            users_resp = supabase.table("users").select("username, role, created_at").execute()
-            logs_resp = supabase.table("login_logs").select("username, login_time").order("id", desc=True).limit(50).execute()
-            
-            df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "created_at"])
-            df_logs = pd.DataFrame(logs_resp.data) if logs_resp.data else pd.DataFrame(columns=["username", "login_time"])
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Registered Players", len(df_users))
-            c2.metric("Total Login Events", len(df_logs))
-            
-            st.write("---")
-            st.markdown("### 📋 Registered Player Accounts")
-            st.dataframe(df_users, use_container_width=True)
-            
-            st.write("---")
-            st.markdown("### 🕒 Recent Login Audit Trail")
-            st.dataframe(df_logs, use_container_width=True)
+        # MASTER ADMIN ONLY: USER MANAGEMENT & AUDIT LOGS
+        if is_master_admin:
+            with tabs[4]:
+                st.subheader("👥 User Backend & Activity Logs")
+                
+                users_resp = supabase.table("users").select("username, role, created_at").execute()
+                logs_resp = supabase.table("login_logs").select("username, login_time").order("id", desc=True).limit(50).execute()
+                
+                df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "created_at"])
+                df_logs = pd.DataFrame(logs_resp.data) if logs_resp.data else pd.DataFrame(columns=["username", "login_time"])
+                
+                c1, c2 = st.columns(2)
+                c1.metric("Registered Players", len(df_users))
+                c2.metric("Total Login Events", len(df_logs))
+                
+                st.write("---")
+                st.markdown("### 📋 Registered Player Accounts")
+                st.dataframe(df_users, use_container_width=True)
+                
+                st.write("---")
+                st.markdown("### 🕒 Recent Login Audit Trail")
+                st.dataframe(df_logs, use_container_width=True)
 
 # --- TODAY'S LEADERBOARD ---
 today_idx = 1 if can_edit else 0
