@@ -432,7 +432,7 @@ if tab_courts:
                 
                 st.write("---")
                 # PERSISTENT SAVE BUTTON FOR MASTER LIST
-                if st.button("💾 Save Player List Permanently", use_container_width=True):
+                if st.button("💾 Save player list", use_container_width=True):
                     if save_master_player_list(st.session_state.roster_builder):
                         st.success("Master player list permanently saved to Supabase! Future code updates won't overwrite this.")
                 
