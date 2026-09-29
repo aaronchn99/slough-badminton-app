@@ -40,7 +40,34 @@ ADMIN_ACCOUNTS = {
     "Aaron": "A4dm1n1"
 }
 
-# --- SUPABASE GLOBAL SESSION PERSISTENCE HELPERS ---
+# DEFAULT FALLBACK ROSTER
+DEFAULT_MASTER_ROSTER = [
+    "Shoj", "Abdul Waheed", "Aaron", "Faisal", "Naveed", 
+    "AbdulKhader", "Ryan", "Abdullah sr", "Yousuf", "Aamer", 
+    "Mohsin", "Simon", "Joe S", "Hassan", "Habeeb"
+]
+
+# --- SUPABASE GLOBAL SESSION & MASTER ROSTER PERSISTENCE HELPERS ---
+def load_master_player_list():
+    try:
+        resp = supabase.table("master_player_list").select("*").eq("id", 1).execute()
+        if resp.data and "players" in resp.data[0]:
+            return resp.data[0]["players"]
+    except Exception:
+        pass
+    return DEFAULT_MASTER_ROSTER
+
+def save_master_player_list(players_list):
+    try:
+        supabase.table("master_player_list").upsert({
+            "id": 1,
+            "players": players_list
+        }).execute()
+        return True
+    except Exception as e:
+        st.error(f"Error saving master player list: {e}")
+        return False
+
 def load_global_session_state():
     try:
         resp = supabase.table("session_state").select("*").eq("id", 1).execute()
@@ -164,7 +191,7 @@ def is_session_active():
     now_uk = datetime.now(ZoneInfo("Europe/London"))
     return now_uk.weekday() == 0 and (20 <= now_uk.hour < 22)
 
-# --- PERSISTENT LOGIN ---
+# --- PERSISTENT LOGIN & STATE INITIALIZATION ---
 query_params = st.query_params
 saved_user = query_params.get("user")
 saved_role = query_params.get("role")
@@ -187,11 +214,7 @@ if "last_court_time" not in st.session_state:
     st.session_state.last_court_time = {}
 
 if "roster_builder" not in st.session_state:
-    st.session_state.roster_builder = [
-        "Shoj", "Abdul Waheed", "Aaron", "Faisal", "Naveed", 
-        "AbdulKhader", "Ryan", "Abdullah sr", "Yousuf", "Aamer", 
-        "Mohsin", "Simon", "Joe S", "Hassan", "Habeeb"
-    ]
+    st.session_state.roster_builder = load_master_player_list()
 
 load_global_session_state()
 
@@ -408,6 +431,12 @@ if tab_courts:
                         st.rerun()
                 
                 st.write("---")
+                # PERSISTENT SAVE BUTTON FOR MASTER LIST
+                if st.button("💾 Save Player List Permanently", use_container_width=True):
+                    if save_master_player_list(st.session_state.roster_builder):
+                        st.success("Master player list permanently saved to Supabase! Future code updates won't overwrite this.")
+                
+                st.write("---")
                 num_courts = st.number_input("Number of Courts Available", min_value=1, max_value=6, value=3, key="num_courts_setup")
                 
                 if st.button("🚀 Start session with these players", type="primary", use_container_width=True):
@@ -540,7 +569,7 @@ with tab_hub:
     
     active_pool = sorted(list(set(st.session_state.get("active_players", [])).union(historical_players)))
     if not active_pool:
-        active_pool = ["Shoj", "Abdul Waheed", "Aaron", "Faisal", "Naveed", "AbdulKhader", "Ryan", "Abdullah sr", "Yousuf", "Aamer", "Mohsin", "Simon", "Joe S", "Hassan", "Habeeb"]
+        active_pool = DEFAULT_MASTER_ROSTER
     
     if len(active_pool) >= 2:
         st.subheader("⚔️ Head-to-Head Rivalry Lookup")
@@ -602,7 +631,6 @@ with tab_hub:
         else:
             st.info(f"No match history recorded for {selected_player} yet.")
 
-        # VISUAL CHART FOR POWER RANKINGS
         st.write("---")
         st.subheader("📊 Club Power Rankings (Current ELO)")
         if st.session_state.player_ratings:
@@ -689,7 +717,6 @@ with tab_league:
         if len(df_league) >= 2: cols[1].metric("🥈 2nd Place", f"{df_league.iloc[1]['Player']}", f"{df_league.iloc[1]['Total Points']} pts")
         if len(df_league) >= 3: cols[2].metric("🥉 3rd Place", f"{df_league.iloc[2]['Player']}", f"{df_league.iloc[2]['Total Points']} pts")
         
-        # VISUAL CHART FOR LEAGUE POINTS
         st.write("---")
         st.markdown("### 📈 League Points Chart")
         chart_data = df_league.set_index("Player")["Total Points"]
@@ -730,11 +757,10 @@ if tab_season:
                     else:
                         st.error("Please fill in all player names.")
 
-        # --- UNDO / DELETE RECENT MATCHES ---
         st.write("---")
         st.markdown("### 🗑️ Recent Matches (Undo)")
         st.caption("Delete a recently saved match to fix a mistake. This will reverse points and play counts for the current session.")
-        recent_matches = fetch_permanent_match_history()[-10:] # Display last 10 games
+        recent_matches = fetch_permanent_match_history()[-10:]
         if recent_matches:
             for m in reversed(recent_matches):
                 m_id = m['id']
@@ -747,10 +773,7 @@ if tab_season:
                 c1.write(f"**ID {m_id}** | Session {sess} | {t1} ({s1}) vs {t2} ({s2})")
                 if c2.button("❌ Delete", key=f"del_m_{m_id}"):
                     try:
-                        # Delete from Supabase
                         supabase.table("match_history_log").delete().eq("id", m_id).execute()
-                        
-                        # Reverse points and play counts if the match was from today's session
                         if sess == st.session_state.current_session_num:
                             for p in m.get('team_a', []):
                                 if s1 > s2:
@@ -810,7 +833,6 @@ if tab_users:
             logs_resp = supabase.table("login_logs").select("username, login_time").order("id", desc=True).limit(50).execute()
             
             df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "created_at"])
-            # Remove password and rating columns from the displayed table
             for col_to_drop in ["password", "rating"]:
                 if col_to_drop in df_users.columns:
                     df_users = df_users.drop(columns=[col_to_drop])
