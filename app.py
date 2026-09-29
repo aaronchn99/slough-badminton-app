@@ -10,13 +10,23 @@ import time
 
 st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸", layout="wide")
 
-# Custom CSS for compact mobile card layout
+# --- MOBILE-FIRST CSS OVERRIDES ---
 st.markdown("""
 <style>
-    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
-    .stButton button { border-radius: 8px; font-weight: bold; }
-    div[data-testid="stVerticalBlock"] > div { margin-bottom: -0.2rem; }
-    .recap-card { background-color: #1E232F; padding: 15px; border-radius: 10px; margin-bottom: 15px; }
+    /* Reduce container padding for mobile screens */
+    .block-container { padding-top: 0.5rem !important; padding-bottom: 2rem !important; padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
+    
+    /* Make all buttons full-width and thumb-friendly on mobile */
+    .stButton button { border-radius: 10px; font-weight: bold; width: 100%; min-height: 45px; }
+    
+    /* Optimize metrics and card layouts */
+    div[data-testid="stVerticalBlock"] > div { margin-bottom: -0.1rem; }
+    
+    /* Responsive tables */
+    div[data-testid="stDataFrame"] { width: 100% !important; overflow-x: auto; }
+    
+    /* Tabs styling for mobile readability */
+    button[data-baseweb="tab"] { font-size: 14px !important; font-weight: bold !important; padding: 8px 12px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -235,7 +245,7 @@ SVG_URL = "data:image/svg+xml;utf8," + urllib.parse.quote(RAW_SVG)
 if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.image(SVG_URL, width=180)
+        st.image(SVG_URL, width=160)
         st.title("Slough Badminton Club")
         login_tab, signup_tab = st.tabs(["🔒 Log In", "📝 Sign Up"])
         with login_tab:
@@ -292,7 +302,7 @@ if st.sidebar.button("Log Out", use_container_width=True):
     st.rerun()
 
 col_logo, col_title = st.columns([1, 4])
-with col_logo: st.image(SVG_URL, width=100)
+with col_logo: st.image(SVG_URL, width=80)
 with col_title:
     st.title("Slough Badminton Club")
     st.caption(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
@@ -431,10 +441,9 @@ if tab_courts:
                         st.rerun()
                 
                 st.write("---")
-                # PERSISTENT SAVE BUTTON FOR MASTER LIST
-                if st.button("💾 Save player list", use_container_width=True):
+                if st.button("💾 Save Player List Permanently", use_container_width=True):
                     if save_master_player_list(st.session_state.roster_builder):
-                        st.success("Master player list permanently saved to Supabase! Future code updates won't overwrite this.")
+                        st.success("Master player list permanently saved to Supabase!")
                 
                 st.write("---")
                 num_courts = st.number_input("Number of Courts Available", min_value=1, max_value=6, value=3, key="num_courts_setup")
@@ -466,7 +475,7 @@ if tab_courts:
                         st.rerun()
 
         if st.session_state.active_players:
-            with st.expander("👥 Manage Attendance (Add Late Arrivals / Remove Early Leavers)", expanded=False):
+            with st.expander("👥 Manage Attendance (Add Late / Remove Early)", expanded=False):
                 col_add1, col_add2 = st.columns([3, 1])
                 with col_add1:
                     new_player_name = st.text_input("Late Arrival Name", placeholder="Enter player name...", label_visibility="collapsed", key="midgame_add").strip()
@@ -489,11 +498,11 @@ if tab_courts:
                             st.error("Enter a valid name.")
 
                 st.write("---")
-                st.caption("Active Players Tonight (Tap ❌ to remove early leavers):")
+                st.caption("Active Players Tonight (Tap ❌ to remove):")
                 
                 for p in list(st.session_state.active_players):
                     col_pname, col_pdel = st.columns([4, 1])
-                    col_pname.write(f"• **{p}** ({st.session_state.play_counts.get(p, 0)} games played)")
+                    col_pname.write(f"• **{p}** ({st.session_state.play_counts.get(p, 0)} games)")
                     if col_pdel.button("❌", key=f"remove_{p}"):
                         st.session_state.active_players.remove(p)
                         save_global_session_state()
@@ -526,12 +535,12 @@ if tab_courts:
                         
                         st.caption("🔵 **Team A**")
                         st.write(f"• **{t1_p1}** & **{t1_p2}**")
-                        st.pills("Select Team A Score", options=score_pill_options, default=0, key=f"c{court_num}_s1_pills", label_visibility="collapsed")
+                        st.pills("Team A Score", options=score_pill_options, default=0, key=f"c{court_num}_s1_pills", label_visibility="collapsed")
                         
                         st.write("---")
                         st.caption("🔴 **Team B**")
                         st.write(f"• **{t2_p1}** & **{t2_p2}**")
-                        st.pills("Select Team B Score", options=score_pill_options, default=0, key=f"c{court_num}_s2_pills", label_visibility="collapsed")
+                        st.pills("Team B Score", options=score_pill_options, default=0, key=f"c{court_num}_s2_pills", label_visibility="collapsed")
                         
                         st.write("")
                         st.button(f"💾 Save & Finish Court {court_num}", key=f"btn_{court_num}", type="primary", use_container_width=True, 
@@ -546,18 +555,18 @@ if tab_courts:
 
 # --- STANDINGS ---
 with tab_standings:
-    st.subheader(f"Today's Session Standings (Session {st.session_state.current_session_num}/12)")
+    st.subheader(f"Today's Standings (Session {st.session_state.current_session_num}/12)")
     if st.session_state.session_scores:
         df_today = pd.DataFrame([
             {"Player": k, "Session Points": v, "Games Played": st.session_state.play_counts.get(k, 0)}
             for k, v in st.session_state.session_scores.items()
         ]).sort_values(by="Session Points", ascending=False).reset_index(drop=True)
         df_today.index += 1
-        st.dataframe(df_today)
+        st.dataframe(df_today, use_container_width=True)
     else:
         st.info("No games recorded for this session yet.")
 
-# --- 🔥 HUB (HEAD-TO-HEAD RIVALRIES & FORM GUIDE) ---
+# --- 🔥 HUB ---
 with tab_hub:
     st.header("🔥 Club Hub & Rivalries")
     
@@ -572,15 +581,15 @@ with tab_hub:
         active_pool = DEFAULT_MASTER_ROSTER
     
     if len(active_pool) >= 2:
-        st.subheader("⚔️ Head-to-Head Rivalry Lookup")
+        st.subheader("⚔️ Head-to-Head Lookup")
         col_p1, col_p2 = st.columns(2)
         with col_p1:
-            p1 = st.selectbox("Select Player 1", active_pool, index=0, key="hub_p1")
+            p1 = st.selectbox("Player 1", active_pool, index=0, key="hub_p1")
         with col_p2:
-            p2 = st.selectbox("Select Player 2", active_pool, index=1 if len(active_pool) > 1 else 0, key="hub_p2")
+            p2 = st.selectbox("Player 2", active_pool, index=1 if len(active_pool) > 1 else 0, key="hub_p2")
             
         if p1 == p2:
-            st.warning("Please select two different players to view their rivalry stats.")
+            st.warning("Please select two different players.")
         else:
             p1_wins = 0
             p2_wins = 0
@@ -601,20 +610,20 @@ with tab_hub:
                     meetings += 1
                     if p1_in_t1 and s1 > s2: p1_wins += 1
                     elif p1_in_t2 and s2 > s1: p1_wins += 1
-                    elif p2_in_t1 and s1 > s2: p2_wins += 1
-                    elif p2_in_t2 and s2 > s1: p2_wins += 1
+                    elif p2_in_t1 and s1 > s2: p1_wins += 1
+                    elif p2_in_t2 and s2 > s1: p1_wins += 1
                     
             c1, c2, c3 = st.columns(3)
             c1.metric(f"{p1} Wins", p1_wins)
-            c2.metric("Total Battles", meetings)
+            c2.metric("Battles", meetings)
             c3.metric(f"{p2} Wins", p2_wins)
             
             if meetings == 0:
-                st.info(f"No recorded matches where {p1} and {p2} played directly against each other yet.")
+                st.info("No recorded direct matches yet.")
         
         st.write("---")
         st.subheader("⚡ Player Form Barometer")
-        selected_player = st.selectbox("Inspect Player Recent Form", active_pool, key="form_player_active")
+        selected_player = st.selectbox("Inspect Recent Form", active_pool, key="form_player_active")
         
         player_matches = []
         for m in history:
@@ -629,10 +638,10 @@ with tab_hub:
             recent_form = "  ".join(player_matches[-5:])
             st.write(f"**Last {min(5, len(player_matches))} matches for {selected_player}:** {recent_form}")
         else:
-            st.info(f"No match history recorded for {selected_player} yet.")
+            st.info("No match history recorded yet.")
 
         st.write("---")
-        st.subheader("📊 Club Power Rankings (Current ELO)")
+        st.subheader("📊 Club Power Rankings (ELO)")
         if st.session_state.player_ratings:
             rating_df = pd.DataFrame([{"Player": k, "Rating": v} for k, v in st.session_state.player_ratings.items()])
             rating_df = rating_df.sort_values("Rating", ascending=False).head(10).set_index("Player")
@@ -691,7 +700,7 @@ with tab_recap:
             with st.container(border=True):
                 st.caption("HEARTBREAK HEROES")
                 st.markdown(f"**{' · '.join(heroes)}**")
-                st.write(f"{max_close} close matches (decided by 2 points or fewer)")
+                st.write(f"{max_close} close matches (2 pts or fewer)")
                 
         if total_points:
             wh = max(total_points, key=total_points.get)
@@ -704,7 +713,7 @@ with tab_recap:
 
 # --- LEAGUE ---
 with tab_league:
-    st.subheader(f"🏆 12-Session Overall League (Progress: {st.session_state.current_session_num}/12)")
+    st.subheader(f"🏆 12-Session Overall League ({st.session_state.current_session_num}/12)")
     if st.session_state.league_standings:
         df_league = pd.DataFrame([
             {"Player": k, "Total Points": v}
@@ -713,9 +722,9 @@ with tab_league:
         df_league.index += 1
         st.markdown("### 🥇 Top 3 Leaderboard")
         cols = st.columns(3)
-        if len(df_league) >= 1: cols[0].metric("🥇 1st Place", f"{df_league.iloc[0]['Player']}", f"{df_league.iloc[0]['Total Points']} pts")
-        if len(df_league) >= 2: cols[1].metric("🥈 2nd Place", f"{df_league.iloc[1]['Player']}", f"{df_league.iloc[1]['Total Points']} pts")
-        if len(df_league) >= 3: cols[2].metric("🥉 3rd Place", f"{df_league.iloc[2]['Player']}", f"{df_league.iloc[2]['Total Points']} pts")
+        if len(df_league) >= 1: cols[0].metric("🥇 1st", f"{df_league.iloc[0]['Player']}", f"{df_league.iloc[0]['Total Points']} pts")
+        if len(df_league) >= 2: cols[1].metric("🥈 2nd", f"{df_league.iloc[1]['Player']}", f"{df_league.iloc[1]['Total Points']} pts")
+        if len(df_league) >= 3: cols[2].metric("🥉 3rd", f"{df_league.iloc[2]['Player']}", f"{df_league.iloc[2]['Total Points']} pts")
         
         st.write("---")
         st.markdown("### 📈 League Points Chart")
@@ -723,7 +732,7 @@ with tab_league:
         st.bar_chart(chart_data)
         
         st.write("---")
-        st.dataframe(df_league)
+        st.dataframe(df_league, use_container_width=True)
     else:
         st.info("No overall standings recorded yet.")
 
@@ -732,34 +741,34 @@ if tab_season:
     with tab_season:
         st.subheader("⚙️ Session & Season Controls")
         
-        with st.expander("🛠️ Emergency: Manually Add Missing Match to History", expanded=False):
-            st.caption("If a match wasn't saved or was cleared by mistake, enter the details below to add it back to the permanent log and update the Recap/Hub.")
+        with st.expander("🛠️ Emergency: Manually Add Missing Match", expanded=False):
+            st.caption("Enter details below to add a missed match back to history.")
             
             with st.form("manual_match_form"):
                 man_sess = st.number_input("Session Number", min_value=1, max_value=12, value=st.session_state.current_session_num)
                 col_m1, col_m2 = st.columns(2)
                 with col_m1:
-                    t1_p1 = st.text_input("Team A Player 1").strip()
-                    t1_p2 = st.text_input("Team A Player 2").strip()
+                    t1_p1 = st.text_input("Team A P1").strip()
+                    t1_p2 = st.text_input("Team A P2").strip()
                     score_a = st.number_input("Team A Score", min_value=0, max_value=30, value=21)
                 with col_m2:
-                    t2_p1 = st.text_input("Team B Player 1").strip()
-                    t2_p2 = st.text_input("Team B Player 2").strip()
+                    t2_p1 = st.text_input("Team B P1").strip()
+                    t2_p2 = st.text_input("Team B P2").strip()
                     score_b = st.number_input("Team B Score", min_value=0, max_value=30, value=15)
                 
-                man_submit = st.form_submit_button("➕ Log Missing Match to Database", use_container_width=True)
+                man_submit = st.form_submit_button("➕ Log Missing Match", use_container_width=True)
                 if man_submit:
                     if t1_p1 and t1_p2 and t2_p1 and t2_p2:
                         t1 = [t1_p1, t1_p2]
                         t2 = [t2_p1, t2_p2]
                         log_match_to_database(man_sess, t1, t2, score_a, score_b)
-                        st.success("Match successfully added to history log! Check the Recap tab.")
+                        st.success("Match successfully added!")
                     else:
                         st.error("Please fill in all player names.")
 
         st.write("---")
         st.markdown("### 🗑️ Recent Matches (Undo)")
-        st.caption("Delete a recently saved match to fix a mistake. This will reverse points and play counts for the current session.")
+        st.caption("Delete a recently saved match to reverse points.")
         recent_matches = fetch_permanent_match_history()[-10:]
         if recent_matches:
             for m in reversed(recent_matches):
@@ -770,8 +779,8 @@ if tab_season:
                 s1, s2 = m.get('score_a', 0), m.get('score_b', 0)
                 
                 c1, c2 = st.columns([4, 1])
-                c1.write(f"**ID {m_id}** | Session {sess} | {t1} ({s1}) vs {t2} ({s2})")
-                if c2.button("❌ Delete", key=f"del_m_{m_id}"):
+                c1.write(f"**ID {m_id}** | S{sess} | {t1} ({s1}) vs {t2} ({s2})")
+                if c2.button("❌", key=f"del_m_{m_id}"):
                     try:
                         supabase.table("match_history_log").delete().eq("id", m_id).execute()
                         if sess == st.session_state.current_session_num:
@@ -787,18 +796,18 @@ if tab_season:
                                 st.session_state.play_counts[p] = max(0, st.session_state.play_counts.get(p, 0) - 1)
                             save_global_session_state()
                         
-                        st.success(f"Match {m_id} deleted successfully!")
+                        st.success(f"Match {m_id} deleted!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error deleting match: {e}")
+                        st.error(f"Error: {e}")
         else:
-            st.info("No matches recorded yet to delete.")
+            st.info("No matches recorded yet.")
 
         st.write("---")
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.markdown("### End Current Session")
-            if st.button("🏁 End All Games & Complete Session", type="primary", use_container_width=True):
+        col_a, col_b = st.columns(1) # Stacked for mobile
+        with st.container():
+            st.markdown("### End Session / Season")
+            if st.button("🏁 Complete Current Session", type="primary", use_container_width=True):
                 current_live = fetch_live_courts()
                 for c_num, c_match in current_live.items():
                     if c_match:
@@ -808,12 +817,10 @@ if tab_season:
                 st.session_state.session_scores = {}
                 st.session_state.play_counts = {}
                 save_global_session_state()
-                st.success(f"Session finished! Advanced to Session {st.session_state.current_session_num} / 12.")
+                st.success(f"Advanced to Session {st.session_state.current_session_num} / 12.")
                 st.rerun()
 
-        with col_b:
-            st.markdown("### Reset Entire Season")
-            if st.button("🔴 End / Reset Entire Season", use_container_width=True):
+            if st.button("🔴 Reset Entire Season", use_container_width=True):
                 st.session_state.current_session_num = 1
                 st.session_state.league_standings = {}
                 st.session_state.session_scores = {}
@@ -821,13 +828,13 @@ if tab_season:
                 st.session_state.play_counts = {}
                 for c in range(1, 7): update_live_court(c, None, None)
                 save_global_session_state()
-                st.success("Season reset back to Session 1 / 12!")
+                st.success("Season reset to Session 1!")
                 st.rerun()
 
 # --- USERS ---
 if tab_users:
     with tab_users:
-        st.subheader("👥 User Backend & Activity Logs")
+        st.subheader("👥 User Logs")
         try:
             users_resp = supabase.table("users").select("*").execute()
             logs_resp = supabase.table("login_logs").select("username, login_time").order("id", desc=True).limit(50).execute()
@@ -840,13 +847,13 @@ if tab_users:
             df_logs = pd.DataFrame(logs_resp.data) if logs_resp.data else pd.DataFrame(columns=["username", "login_time"])
             
             c1, c2 = st.columns(2)
-            c1.metric("Registered Players", len(df_users))
-            c2.metric("Total Login Events", len(df_logs))
+            c1.metric("Players", len(df_users))
+            c2.metric("Logins", len(df_logs))
             st.write("---")
-            st.markdown("### 📋 Registered Player Accounts")
+            st.markdown("### 📋 Accounts")
             st.dataframe(df_users, use_container_width=True)
             st.write("---")
-            st.markdown("### 🕒 Recent Login Audit Trail")
+            st.markdown("### 🕒 Logins")
             st.dataframe(df_logs, use_container_width=True)
         except Exception as ex:
-            st.warning(f"Database query error: {ex}")
+            st.warning(f"Error: {ex}")
