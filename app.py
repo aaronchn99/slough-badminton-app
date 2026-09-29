@@ -381,8 +381,8 @@ if tab_courts:
         
         if not st.session_state.active_players:
             with st.container(border=True):
-                st.subheader("👥 Tonight's Player Roster Builder")
-                st.caption("Add or remove players below, then tap 'Start Session' when ready.")
+                st.subheader("👥 Players for today's session")
+                st.caption("Add or remove players below, then tap 'Start session with these players' when ready.")
                 
                 col_add_input, col_add_btn = st.columns([3, 1])
                 with col_add_input:
@@ -410,7 +410,7 @@ if tab_courts:
                 st.write("---")
                 num_courts = st.number_input("Number of Courts Available", min_value=1, max_value=6, value=3, key="num_courts_setup")
                 
-                if st.button("🚀 Start Session with This Roster", type="primary", use_container_width=True):
+                if st.button("🚀 Start session with these players", type="primary", use_container_width=True):
                     if len(st.session_state.roster_builder) < 4:
                         st.error("You need at least 4 players to start a session.")
                     else:
@@ -573,7 +573,7 @@ with tab_hub:
                     if p1_in_t1 and s1 > s2: p1_wins += 1
                     elif p1_in_t2 and s2 > s1: p1_wins += 1
                     elif p2_in_t1 and s1 > s2: p1_wins += 1
-                    elif p2_in_t2 and s2 > s1: p1_wins += 1
+                    elif p2_in_t2 and s2 > s1: p2_wins += 1
                     
             c1, c2, c3 = st.columns(3)
             c1.metric(f"{p1} Wins", p1_wins)
@@ -753,9 +753,10 @@ if tab_users:
             logs_resp = supabase.table("login_logs").select("username, login_time").order("id", desc=True).limit(50).execute()
             
             df_users = pd.DataFrame(users_resp.data) if users_resp.data else pd.DataFrame(columns=["username", "role", "created_at"])
-            # Safely drop the password column if it exists in the dataframe so it never displays on screen
-            if "password" in df_users.columns:
-                df_users = df_users.drop(columns=["password"])
+            # Remove password and rating columns from the displayed table
+            for col_to_drop in ["password", "rating"]:
+                if col_to_drop in df_users.columns:
+                    df_users = df_users.drop(columns=[col_to_drop])
                 
             df_logs = pd.DataFrame(logs_resp.data) if logs_resp.data else pd.DataFrame(columns=["username", "login_time"])
             
