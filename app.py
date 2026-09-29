@@ -398,7 +398,7 @@ if tab_courts:
                             st.warning("Enter a name.")
                 
                 st.write("---")
-                st.markdown("**Current Roster List:**")
+                st.markdown("**Current player list:**")
                 
                 for idx, player in enumerate(list(st.session_state.roster_builder)):
                     c_name, c_del = st.columns([4, 1])
@@ -572,7 +572,7 @@ with tab_hub:
                     meetings += 1
                     if p1_in_t1 and s1 > s2: p1_wins += 1
                     elif p1_in_t2 and s2 > s1: p1_wins += 1
-                    elif p2_in_t1 and s1 > s2: p1_wins += 1
+                    elif p2_in_t1 and s1 > s2: p2_wins += 1
                     elif p2_in_t2 and s2 > s1: p2_wins += 1
                     
             c1, c2, c3 = st.columns(3)
