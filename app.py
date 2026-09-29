@@ -13,19 +13,10 @@ st.set_page_config(page_title="Slough Badminton Club (Monday)", page_icon="🏸"
 # --- MOBILE-FIRST CSS OVERRIDES ---
 st.markdown("""
 <style>
-    /* Reduce container padding for mobile screens */
     .block-container { padding-top: 0.5rem !important; padding-bottom: 2rem !important; padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
-    
-    /* Make all buttons full-width and thumb-friendly on mobile */
     .stButton button { border-radius: 10px; font-weight: bold; width: 100%; min-height: 45px; }
-    
-    /* Optimize metrics and card layouts */
     div[data-testid="stVerticalBlock"] > div { margin-bottom: -0.1rem; }
-    
-    /* Responsive tables */
     div[data-testid="stDataFrame"] { width: 100% !important; overflow-x: auto; }
-    
-    /* Tabs styling for mobile readability */
     button[data-baseweb="tab"] { font-size: 14px !important; font-weight: bold !important; padding: 8px 12px !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -42,7 +33,6 @@ try:
 except Exception as e:
     st.error("Could not connect to Supabase database. Please verify Streamlit secrets.")
 
-# HARDCODED ADMIN ACCOUNTS 
 ADMIN_ACCOUNTS = {
     "admin": "4dm1n776&",
     "Musa": "4dmiN786&",
@@ -50,14 +40,12 @@ ADMIN_ACCOUNTS = {
     "Aaron": "A4dm1n1"
 }
 
-# DEFAULT FALLBACK ROSTER
 DEFAULT_MASTER_ROSTER = [
     "Shoj", "Abdul Waheed", "Aaron", "Faisal", "Naveed", 
     "AbdulKhader", "Ryan", "Abdullah sr", "Yousuf", "Aamer", 
     "Mohsin", "Simon", "Joe S", "Hassan", "Habeeb"
 ]
 
-# --- SUPABASE GLOBAL SESSION & MASTER ROSTER PERSISTENCE HELPERS ---
 def load_master_player_list():
     try:
         resp = supabase.table("master_player_list").select("*").eq("id", 1).execute()
@@ -201,7 +189,6 @@ def is_session_active():
     now_uk = datetime.now(ZoneInfo("Europe/London"))
     return now_uk.weekday() == 0 and (20 <= now_uk.hour < 22)
 
-# --- PERSISTENT LOGIN & STATE INITIALIZATION ---
 query_params = st.query_params
 saved_user = query_params.get("user")
 saved_role = query_params.get("role")
@@ -241,7 +228,6 @@ RAW_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width
 </svg>"""
 SVG_URL = "data:image/svg+xml;utf8," + urllib.parse.quote(RAW_SVG)
 
-# --- LOGIN SCREEN ---
 if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -284,7 +270,6 @@ if not st.session_state.logged_in:
                         else: st.error(msg)
     st.stop()
 
-# --- DYNAMIC PERMISSION CHECK ---
 session_live = is_session_active()
 can_edit = session_live or (st.session_state.role == "admin")
 is_master_admin = (st.session_state.username == "admin")
@@ -307,7 +292,6 @@ with col_title:
     st.title("Slough Badminton Club")
     st.caption(f"📅 Season Progress: Session {st.session_state.current_session_num} / 12")
 
-# --- DYNAMIC TAB ROUTING WITH 🔥 HUB ---
 tab_names = ["📊 Standings", "🔥 Hub", "🌙 Recap", "🏆 League"]
 if can_edit: tab_names.insert(0, "🎾 Courts")
 if can_manage_season: tab_names.append("⚙️ Season")
@@ -404,7 +388,6 @@ def process_court_finish_callback(court_num, match, s1_key, s2_key):
     save_global_session_state()
     st.session_state[f"msg_{court_num}"] = ("success", f"Court {court_num} score saved successfully!")
 
-# --- COURTS ---
 if tab_courts:
     with tab_courts:
         if st.button("🔄 Refresh Live Courts", use_container_width=True):
@@ -553,7 +536,6 @@ if tab_courts:
                             if not assigned: st.warning("Not enough players in queue.")
                             st.rerun()
 
-# --- STANDINGS ---
 with tab_standings:
     st.subheader(f"Today's Standings (Session {st.session_state.current_session_num}/12)")
     if st.session_state.session_scores:
@@ -566,7 +548,6 @@ with tab_standings:
     else:
         st.info("No games recorded for this session yet.")
 
-# --- 🔥 HUB ---
 with tab_hub:
     st.header("🔥 Club Hub & Rivalries")
     
@@ -650,7 +631,6 @@ with tab_hub:
     else:
         st.info("No players available for the Hub yet.")
 
-# --- RECAP ---
 with tab_recap:
     st.header("Night Recap")
     history = fetch_permanent_match_history()
@@ -711,7 +691,6 @@ with tab_recap:
     else:
         st.info("No games finished or recorded in history yet.")
 
-# --- LEAGUE ---
 with tab_league:
     st.subheader(f"🏆 12-Session Overall League ({st.session_state.current_session_num}/12)")
     if st.session_state.league_standings:
@@ -736,7 +715,6 @@ with tab_league:
     else:
         st.info("No overall standings recorded yet.")
 
-# --- SEASON CONTROLS TAB ---
 if tab_season:
     with tab_season:
         st.subheader("⚙️ Session & Season Controls")
@@ -804,34 +782,31 @@ if tab_season:
             st.info("No matches recorded yet.")
 
         st.write("---")
-        col_a, col_b = st.columns(1) # Stacked for mobile
-        with st.container():
-            st.markdown("### End Session / Season")
-            if st.button("🏁 Complete Current Session", type="primary", use_container_width=True):
-                current_live = fetch_live_courts()
-                for c_num, c_match in current_live.items():
-                    if c_match:
-                        process_court_finish_callback(c_num, c_match, f"c{c_num}_s1_pills", f"c{c_num}_s2_pills")
-                if st.session_state.current_session_num < 12: st.session_state.current_session_num += 1
-                st.session_state.active_players = []
-                st.session_state.session_scores = {}
-                st.session_state.play_counts = {}
-                save_global_session_state()
-                st.success(f"Advanced to Session {st.session_state.current_session_num} / 12.")
-                st.rerun()
+        st.markdown("### End Session / Season")
+        if st.button("🏁 Complete Current Session", type="primary", use_container_width=True):
+            current_live = fetch_live_courts()
+            for c_num, c_match in current_live.items():
+                if c_match:
+                    process_court_finish_callback(c_num, c_match, f"c{c_num}_s1_pills", f"c{c_num}_s2_pills")
+            if st.session_state.current_session_num < 12: st.session_state.current_session_num += 1
+            st.session_state.active_players = []
+            st.session_state.session_scores = {}
+            st.session_state.play_counts = {}
+            save_global_session_state()
+            st.success(f"Advanced to Session {st.session_state.current_session_num} / 12.")
+            st.rerun()
 
-            if st.button("🔴 Reset Entire Season", use_container_width=True):
-                st.session_state.current_session_num = 1
-                st.session_state.league_standings = {}
-                st.session_state.session_scores = {}
-                st.session_state.active_players = {}
-                st.session_state.play_counts = {}
-                for c in range(1, 7): update_live_court(c, None, None)
-                save_global_session_state()
-                st.success("Season reset to Session 1!")
-                st.rerun()
+        if st.button("🔴 Reset Entire Season", use_container_width=True):
+            st.session_state.current_session_num = 1
+            st.session_state.league_standings = {}
+            st.session_state.session_scores = {}
+            st.session_state.active_players = {}
+            st.session_state.play_counts = {}
+            for c in range(1, 7): update_live_court(c, None, None)
+            save_global_session_state()
+            st.success("Season reset to Session 1!")
+            st.rerun()
 
-# --- USERS ---
 if tab_users:
     with tab_users:
         st.subheader("👥 User Logs")
