@@ -32,7 +32,7 @@ try:
 except Exception as e:
     st.error("Could not connect to Supabase database. Please verify Streamlit secrets.")
 
-# HARDCODED ADMIN ACCOUNTS (Including Aaron)
+# HARDCODED ADMIN ACCOUNTS 
 ADMIN_ACCOUNTS = {
     "admin": "4dm1n776&",
     "Musa": "4dmiN786&",
@@ -601,6 +601,15 @@ with tab_hub:
             st.write(f"**Last {min(5, len(player_matches))} matches for {selected_player}:** {recent_form}")
         else:
             st.info(f"No match history recorded for {selected_player} yet.")
+
+        # VISUAL CHART FOR POWER RANKINGS
+        st.write("---")
+        st.subheader("📊 Club Power Rankings (Current ELO)")
+        if st.session_state.player_ratings:
+            rating_df = pd.DataFrame([{"Player": k, "Rating": v} for k, v in st.session_state.player_ratings.items()])
+            rating_df = rating_df.sort_values("Rating", ascending=False).head(10).set_index("Player")
+            st.bar_chart(rating_df)
+
     else:
         st.info("No players available for the Hub yet.")
 
@@ -679,6 +688,13 @@ with tab_league:
         if len(df_league) >= 1: cols[0].metric("🥇 1st Place", f"{df_league.iloc[0]['Player']}", f"{df_league.iloc[0]['Total Points']} pts")
         if len(df_league) >= 2: cols[1].metric("🥈 2nd Place", f"{df_league.iloc[1]['Player']}", f"{df_league.iloc[1]['Total Points']} pts")
         if len(df_league) >= 3: cols[2].metric("🥉 3rd Place", f"{df_league.iloc[2]['Player']}", f"{df_league.iloc[2]['Total Points']} pts")
+        
+        # VISUAL CHART FOR LEAGUE POINTS
+        st.write("---")
+        st.markdown("### 📈 League Points Chart")
+        chart_data = df_league.set_index("Player")["Total Points"]
+        st.bar_chart(chart_data)
+        
         st.write("---")
         st.dataframe(df_league)
     else:
@@ -713,6 +729,47 @@ if tab_season:
                         st.success("Match successfully added to history log! Check the Recap tab.")
                     else:
                         st.error("Please fill in all player names.")
+
+        # --- UNDO / DELETE RECENT MATCHES ---
+        st.write("---")
+        st.markdown("### 🗑️ Recent Matches (Undo)")
+        st.caption("Delete a recently saved match to fix a mistake. This will reverse points and play counts for the current session.")
+        recent_matches = fetch_permanent_match_history()[-10:] # Display last 10 games
+        if recent_matches:
+            for m in reversed(recent_matches):
+                m_id = m['id']
+                sess = m['session_num']
+                t1 = " & ".join(m.get('team_a', []))
+                t2 = " & ".join(m.get('team_b', []))
+                s1, s2 = m.get('score_a', 0), m.get('score_b', 0)
+                
+                c1, c2 = st.columns([4, 1])
+                c1.write(f"**ID {m_id}** | Session {sess} | {t1} ({s1}) vs {t2} ({s2})")
+                if c2.button("❌ Delete", key=f"del_m_{m_id}"):
+                    try:
+                        # Delete from Supabase
+                        supabase.table("match_history_log").delete().eq("id", m_id).execute()
+                        
+                        # Reverse points and play counts if the match was from today's session
+                        if sess == st.session_state.current_session_num:
+                            for p in m.get('team_a', []):
+                                if s1 > s2:
+                                    st.session_state.session_scores[p] = max(0, st.session_state.session_scores.get(p, 0) - 2)
+                                    st.session_state.league_standings[p] = max(0, st.session_state.league_standings.get(p, 0) - 2)
+                                st.session_state.play_counts[p] = max(0, st.session_state.play_counts.get(p, 0) - 1)
+                            for p in m.get('team_b', []):
+                                if s2 > s1:
+                                    st.session_state.session_scores[p] = max(0, st.session_state.session_scores.get(p, 0) - 2)
+                                    st.session_state.league_standings[p] = max(0, st.session_state.league_standings.get(p, 0) - 2)
+                                st.session_state.play_counts[p] = max(0, st.session_state.play_counts.get(p, 0) - 1)
+                            save_global_session_state()
+                        
+                        st.success(f"Match {m_id} deleted successfully!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error deleting match: {e}")
+        else:
+            st.info("No matches recorded yet to delete.")
 
         st.write("---")
         col_a, col_b = st.columns(2)
